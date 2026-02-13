@@ -1,1 +1,397 @@
-
+pipeline {
+    agent {
+        kubernetes {
+            label 'enterprise-deployment-agent'
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  serviceAccountName: jenkins-agent
+  containers:
+  - name: jnlp
+    image: jenkins/inbound-agent:4.10-3-alpine
+    args: ['$(JENKINS_SECRET)', '$(JENKINS_NAME)']
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 200m
+        memory: 512Mi
+  - name: terraform
+    image: hashicorp/terraform:1.3
+    command: ['cat']
+    tty: true
+    resources:
+      limits:
+        cpu: 1
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+  - name: kubectl
+    image: bitnami/kubectl:1.24
+    command: ['cat']
+    tty: true
+  - name: docker
+    image: docker:20.10-dind
+    securityContext:
+      privileged: true
+    env:
+    - name: DOCKER_TLS_CERTDIR
+      value: ""
+  - name: maven
+    image: maven:3.8-openjdk-11
+    command: ['cat']
+    tty: true
+'''
+        }
+    }
+    
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        timeout(time: 2, unit: 'HOURS')
+        retry(3)
+        disableConcurrentBuilds()
+    }
+    
+    environment {
+        AWS_REGION = 'us-east-1'
+        ECR_REGISTRY = '123456789012.dkr.ecr.us-east-1.amazonaws.com'
+        CLUSTER_NAME = 'analytics-${ENVIRONMENT}'
+        TF_STATE_BUCKET = 'analytics-tf-state-${AWS_ACCOUNT_ID}'
+        TF_STATE_KEY = '${CLUSTER_NAME}/terraform.tfstate'
+        VAULT_ADDR = 'https://vault.company.com:8200'
+    }
+    
+    parameters {
+        choice(
+            name: 'ENVIRONMENT',
+            choices: ['dev', 'staging', 'prod'],
+            description: 'Target deployment environment'
+        )
+        choice(
+            name: 'ACTION',
+            choices: ['plan', 'apply', 'destroy'],
+            description: 'Terraform action to perform'
+        )
+        booleanParam(
+            name: 'RUN_TESTS',
+            defaultValue: true,
+            description: 'Run automated tests'
+        )
+        booleanParam(
+            name: 'SECURITY_SCAN',
+            defaultValue: true,
+            description: 'Run security scans'
+        )
+        string(
+            name: 'IMAGE_TAG',
+            defaultValue: '${BUILD_ID}',
+            description: 'Docker image tag'
+        )
+    }
+    
+    stages {
+        stage('Initialize') {
+            steps {
+                script {
+                    // Get credentials from Vault
+                    withVault([
+                        configuration: [timeout: 60],
+                        vaultSecrets: [
+                            [path: 'secret/aws/${ENVIRONMENT}', engineVersion: 2, secretValues: [
+                                [envVar: 'AWS_ACCESS_KEY_ID', vaultKey: 'aws_access_key_id'],
+                                [envVar: 'AWS_SECRET_ACCESS_KEY', vaultKey: 'aws_secret_access_key']
+                            ]],
+                            [path: 'secret/kubernetes/${ENVIRONMENT}', engineVersion: 2, secretValues: [
+                                [envVar: 'KUBECONFIG', vaultKey: 'kubeconfig']
+                            ]]
+                        ]
+                    ])
+                    
+                    // Setup AWS credentials
+                    sh '''
+                    aws configure set aws_access_key_id ${AWS_ACCESS_KEY_ID}
+                    aws configure set aws_secret_access_key ${AWS_SECRET_ACCESS_KEY}
+                    aws configure set region ${AWS_REGION}
+                    '''
+                    
+                    // Write kubeconfig
+                    writeFile file: 'kubeconfig.yaml', text: env.KUBECONFIG
+                    env.KUBECONFIG = 'kubeconfig.yaml'
+                }
+                
+                // Clone repositories
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: '*/main']],
+                    extensions: [[$class: 'RelativeTargetDirectory', relativeTargetDir: 'infra']],
+                    userRemoteConfigs: [[url: 'https://github.com/company/analytics-infrastructure.git']]
+                ])
+                
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: '*/main']],
+                    extensions: [[$class: 'RelativeTargetDirectory', relativeTargetDir: 'app']],
+                    userRemoteConfigs: [[url: 'https://github.com/company/analytics-app.git']]
+                ])
+            }
+        }
+        
+        stage('Security Scan') {
+            when {
+                expression { params.SECURITY_SCAN == true }
+            }
+            steps {
+                script {
+                    // SAST Scan
+                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                        sh '''
+                        cd app
+                        mvn sonar:sonar \
+                            -Dsonar.projectKey=analytics-platform \
+                            -Dsonar.host.url=https://sonar.company.com \
+                            -Dsonar.login=${SONAR_TOKEN}
+                        '''
+                    }
+                    
+                    // Container Scan
+                    sh '''
+                    docker run --rm \
+                        -v /var/run/docker.sock:/var/run/docker.sock \
+                        -v ${WORKSPACE}:/src \
+                        aquasec/trivy:latest \
+                        image --exit-code 1 --severity HIGH,CRITICAL \
+                        ${ECR_REGISTRY}/analytics-api:${IMAGE_TAG}
+                    '''
+                }
+            }
+        }
+        
+        stage('Build & Test') {
+            steps {
+                script {
+                    dir('app') {
+                        // Build with Maven
+                        sh 'mvn clean package -DskipTests=false -Ddockerfile.skip=true'
+                        
+                        // Run tests
+                        if (params.RUN_TESTS) {
+                            sh 'mvn test'
+                            junit 'target/surefire-reports/*.xml'
+                        }
+                        
+                        // Build Docker images
+                        sh '''
+                        docker build -t ${ECR_REGISTRY}/analytics-api:${IMAGE_TAG} -f docker/api/Dockerfile .
+                        docker build -t ${ECR_REGISTRY}/analytics-web:${IMAGE_TAG} -f docker/webapp/Dockerfile .
+                        '''
+                        
+                        // Push to ECR
+                        sh '''
+                        aws ecr get-login-password --region ${AWS_REGION} | \
+                        docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                        docker push ${ECR_REGISTRY}/analytics-api:${IMAGE_TAG}
+                        docker push ${ECR_REGISTRY}/analytics-web:${IMAGE_TAG}
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('Infrastructure Plan') {
+            when {
+                expression { params.ACTION in ['plan', 'apply'] }
+            }
+            steps {
+                script {
+                    dir('infra/terraform/environments/${ENVIRONMENT}') {
+                        // Initialize Terraform
+                        sh '''
+                        terraform init \
+                            -backend-config="bucket=${TF_STATE_BUCKET}" \
+                            -backend-config="key=${TF_STATE_KEY}" \
+                            -backend-config="region=${AWS_REGION}"
+                        '''
+                        
+                        // Run Terraform plan
+                        sh '''
+                        terraform plan \
+                            -var="environment=${ENVIRONMENT}" \
+                            -var="image_tag=${IMAGE_TAG}" \
+                            -out=tfplan.binary
+                        terraform show -json tfplan.binary > tfplan.json
+                        '''
+                        
+                        // Save plan for review
+                        archiveArtifacts artifacts: 'tfplan.json'
+                    }
+                }
+            }
+        }
+        
+        stage('Manual Approval') {
+            when {
+                expression { params.ENVIRONMENT == 'prod' && params.ACTION == 'apply' }
+            }
+            steps {
+                timeout(time: 1, unit: 'HOURS') {
+                    input message: 'Approve production deployment?',
+                          ok: 'Deploy to Production'
+                }
+            }
+        }
+        
+        stage('Infrastructure Apply') {
+            when {
+                expression { params.ACTION == 'apply' }
+            }
+            steps {
+                script {
+                    dir('infra/terraform/environments/${ENVIRONMENT}') {
+                        // Apply Terraform
+                        sh '''
+                        terraform apply -auto-approve tfplan.binary
+                        '''
+                        
+                        // Get outputs
+                        sh 'terraform output -json > outputs.json'
+                        def outputs = readJSON file: 'outputs.json'
+                        env.K8S_CLUSTER_ENDPOINT = outputs.cluster_endpoint.value
+                    }
+                }
+            }
+        }
+        
+        stage('Kubernetes Deploy') {
+            when {
+                expression { params.ACTION == 'apply' }
+            }
+            steps {
+                script {
+                    // Update kubeconfig
+                    sh '''
+                    aws eks update-kubeconfig \
+                        --name ${CLUSTER_NAME} \
+                        --region ${AWS_REGION}
+                    '''
+                    
+                    // Deploy using kustomize
+                    dir('infra/kubernetes/overlays/${ENVIRONMENT}') {
+                        sh '''
+                        kustomize edit set image \
+                            analytics-api=${ECR_REGISTRY}/analytics-api:${IMAGE_TAG} \
+                            analytics-web=${ECR_REGISTRY}/analytics-web:${IMAGE_TAG}
+                        
+                        kubectl apply -k .
+                        
+                        # Wait for deployment
+                        kubectl wait --for=condition=available \
+                            --timeout=300s \
+                            deployment/analytics-api -n analytics
+                        kubectl wait --for=condition=available \
+                            --timeout=300s \
+                            deployment/analytics-web -n analytics
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('Smoke Tests') {
+            steps {
+                script {
+                    // Run smoke tests
+                    sh '''
+                    # Test API endpoint
+                    API_URL=$(kubectl get ingress analytics-api -n analytics -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+                    curl -f https://${API_URL}/actuator/health || exit 1
+                    
+                    # Test web endpoint
+                    WEB_URL=$(kubectl get ingress analytics-web -n analytics -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+                    curl -f https://${WEB_URL}/health || exit 1
+                    '''
+                }
+            }
+        }
+        
+        stage('Monitoring Setup') {
+            steps {
+                script {
+                    // Deploy monitoring stack
+                    dir('infra/monitoring') {
+                        sh '''
+                        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+                        helm repo update
+                        
+                        helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+                            --namespace monitoring \
+                            --create-namespace \
+                            -f values-${ENVIRONMENT}.yaml
+                        
+                        # Deploy EFK stack
+                        kubectl apply -k efk/
+                        '''
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            // Cleanup
+            sh '''
+            docker system prune -f
+            rm -f kubeconfig.yaml
+            '''
+            
+            // Update deployment tracking
+            script {
+                def status = currentBuild.currentResult
+                def duration = currentBuild.duration
+                
+                // Send metrics to monitoring
+                sh """
+                curl -X POST https://monitoring.company.com/metrics \
+                    -d 'deployment_duration_seconds{environment="${ENVIRONMENT}"} ${duration/1000}' \
+                    -d 'deployment_status{environment="${ENVIRONMENT}",status="${status}"} 1'
+                """
+            }
+        }
+        
+        success {
+            // Notify success
+            slackSend(
+                channel: '#deployments',
+                color: 'good',
+                message: "✅ Deployment successful: ${env.JOB_NAME} #${env.BUILD_NUMBER} to ${params.ENVIRONMENT}"
+            )
+            
+            // Update deployment dashboard
+            archiveArtifacts artifacts: '**/test-results/**/*.xml, **/coverage/**/*'
+        }
+        
+        failure {
+            // Notify failure
+            slackSend(
+                channel: '#deployments-alerts',
+                color: 'danger',
+                message: "❌ Deployment failed: ${env.JOB_NAME} #${env.BUILD_NUMBER} to ${params.ENVIRONMENT}"
+            )
+            
+            // Attempt rollback
+            script {
+                if (params.ENVIRONMENT == 'prod') {
+                    dir('infra/kubernetes/overlays/${ENVIRONMENT}') {
+                        sh '''
+                        kubectl rollout undo deployment/analytics-api -n analytics
+                        kubectl rollout undo deployment/analytics-web -n analytics
+                        '''
+                    }
+                }
+            }
+        }
+    }
+}
