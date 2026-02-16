@@ -1,3 +1,5 @@
+📌 Project Overview
+
 This project simulates how a real enterprise product company deploys and manages an analytics platform across 100+ customer-managed environments.
 
 It implements a fully automated deployment framework built on:
@@ -18,43 +20,43 @@ Rollback & disaster recovery
 
 Cost optimization strategies
 
-Technology Stack
-CI/CD
+🛠 Technology Stack
+🚀 CI/CD
 
-Jenkins (Pipeline automation)
+Jenkins – Pipeline automation
 
-GitHub (Source control & webhooks)
+GitHub – Source control & webhooks
 
-Maven (Build lifecycle)
+Maven – Build lifecycle management
 
-Infrastructure as Code
+🏗 Infrastructure as Code
 
-Terraform (AWS provisioning)
+Terraform – AWS infrastructure provisioning
 
-Remote backend (S3 + DynamoDB state locking)
+Remote Backend – S3 + DynamoDB state locking
 
-Containerization
+🐳 Containerization
 
-Docker (Multi-stage builds)
+Docker – Multi-stage builds
 
-Orchestration
+☸️ Orchestration
 
-Amazon EKS (Managed Kubernetes)
+Amazon EKS – Managed Kubernetes
 
-Monitoring & Observability
+📊 Monitoring & Observability
 
-Elasticsearch
+Elasticsearch – Log storage & search
 
-Fluentd
+Fluentd – Log aggregation
 
-Kibana
+Kibana – Visualization & dashboards
 
-Security & DevSecOps
+🔐 Security & DevSecOps
 
-SonarQube
+SonarQube – Code quality & static analysis
 
-Snyk
+Snyk – Vulnerability scanning
 
-HashiCorp Vault
+HashiCorp Vault – Secrets management
 
-AWS Secrets Manager
+AWS Secrets Manager – Cloud-native secret storage
