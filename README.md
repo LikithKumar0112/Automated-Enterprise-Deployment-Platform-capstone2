@@ -37,8 +37,10 @@ This project implements a complete DevOps lifecycle for an enterprise analytics 
 
 See [STRUCTURE.md](./STRUCTURE.md) for detailed repository organization.
 
+```bash
 enterprise-deployment-platform/
 ├── README.md
+│
 ├── docker/
 │   ├── webapp/
 │   │   └── Dockerfile
@@ -46,27 +48,35 @@ enterprise-deployment-platform/
 │   │   └── Dockerfile
 │   └── data-processor/
 │       └── Dockerfile
+│
 ├── terraform/
 │   ├── modules/
 │   │   ├── eks/
 │   │   ├── vpc/
 │   │   ├── security/
 │   │   └── monitoring/
+│   │
 │   └── environments/
 │       ├── dev/
 │       ├── staging/
 │       └── prod/
+│
 ├── kubernetes/
 │   ├── base/
 │   ├── overlays/
 │   └── helm-charts/
+│
 ├── jenkins/
 │   ├── Jenkinsfile
 │   ├── pipeline-library/
-│   └── job-dsl/
-├── scripts/
+│   ├── job-dsl/
+│   └── scripts/
+│
 ├── monitoring/
+│
 └── docs/
+```
+
 
 ## Documentation
 
