@@ -1,4 +1,4 @@
-# Enterprise Product Deployment Platform
+# Automated Enterprise Product Deployment Platform
 
 **Project Domain**: Product-Based Technology (Enterprise Analytics)
 
