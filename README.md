@@ -37,15 +37,36 @@ This project implements a complete DevOps lifecycle for an enterprise analytics 
 
 See [STRUCTURE.md](./STRUCTURE.md) for detailed repository organization.
 
-```
-enterprise-product-deployment/
-├── product-deployment-pipeline/    # Jenkins CI/CD configuration
-├── product-infrastructure/         # Terraform IaC modules
-├── product-kubernetes/             # Kubernetes manifests
-├── product-docker/                 # Docker build configuration
-├── monitoring/                     # EFK stack and dashboards
-└── docs/                          # Comprehensive documentation
-```
+enterprise-deployment-platform/
+├── README.md
+├── docker/
+│   ├── webapp/
+│   │   └── Dockerfile
+│   ├── api/
+│   │   └── Dockerfile
+│   └── data-processor/
+│       └── Dockerfile
+├── terraform/
+│   ├── modules/
+│   │   ├── eks/
+│   │   ├── vpc/
+│   │   ├── security/
+│   │   └── monitoring/
+│   └── environments/
+│       ├── dev/
+│       ├── staging/
+│       └── prod/
+├── kubernetes/
+│   ├── base/
+│   ├── overlays/
+│   └── helm-charts/
+├── jenkins/
+│   ├── Jenkinsfile
+│   ├── pipeline-library/
+│   └── job-dsl/
+├── scripts/
+├── monitoring/
+└── docs/
 
 ## Documentation
 
