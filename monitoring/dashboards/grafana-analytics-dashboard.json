@@ -1,0 +1,44 @@
+{
+  "title": "Analytics Platform Overview",
+  "uid": "analytics-platform-overview",
+  "tags": ["analytics-platform"],
+  "timezone": "utc",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request rate (analytics-api)",
+      "type": "graph",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "sum(rate(http_requests_total{app=\"analytics-api\"}[5m]))" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Error rate (analytics-api)",
+      "type": "graph",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "sum(rate(http_requests_total{app=\"analytics-api\",status=~\"5..\"}[5m])) / sum(rate(http_requests_total{app=\"analytics-api\"}[5m])) * 100" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Pod restarts",
+      "type": "graph",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "sum(rate(kube_pod_container_status_restarts_total{namespace=\"analytics\"}[15m])) by (pod)" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Node CPU utilization",
+      "type": "graph",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "node_cpu_utilization" }
+      ]
+    }
+  ]
+}

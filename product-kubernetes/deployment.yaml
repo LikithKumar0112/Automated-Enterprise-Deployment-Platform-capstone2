@@ -1,0 +1,197 @@
+# Three workloads for the three components in docs/architecture.md's diagram
+# (WebApp/Nginx, API layer, Data Processing Engine) - kept in one file to
+# match the flat product-kubernetes/ layout; each is a separate --- document.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-api
+  namespace: analytics
+  labels:
+    app: analytics-api
+    component: api
+spec:
+  replicas: 3
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: analytics-api
+  template:
+    metadata:
+      labels:
+        app: analytics-api
+        component: api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values: [analytics-api]
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: api
+        # "analytics-api:latest" placeholder - overridden by CI with
+        # `kustomize`-free `kubectl set image` / sed in
+        # product-deployment-pipeline/scripts/deploy.sh
+        image: "analytics-api:latest"
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+        envFrom:
+        - configMapRef:
+            name: api-config
+        - secretRef:
+            name: api-secrets
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 5
+        volumeMounts:
+        - name: tmp-volume
+          mountPath: /tmp
+      volumes:
+      - name: tmp-volume
+        emptyDir: {}
+      tolerations:
+      - key: "spot"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-web
+  namespace: analytics
+  labels:
+    app: analytics-web
+    component: webapp
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: analytics-web
+  template:
+    metadata:
+      labels:
+        app: analytics-web
+        component: webapp
+    spec:
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      containers:
+      - name: web
+        image: "analytics-web:latest"
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+        envFrom:
+        - configMapRef:
+            name: web-config
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+# Batch/scheduled workload - the "Data Processing Engine" in the architecture
+# diagram. Runs hourly, tolerates the spot node group.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: analytics-data-processor
+  namespace: analytics
+  labels:
+    app: analytics-data-processor
+    component: data-processor
+spec:
+  schedule: "0 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: analytics-data-processor
+        spec:
+          restartPolicy: OnFailure
+          tolerations:
+          - key: "spot"
+            operator: "Equal"
+            value: "true"
+            effect: "NoSchedule"
+          containers:
+          - name: data-processor
+            image: "analytics-data-processor:latest"
+            envFrom:
+            - configMapRef:
+                name: api-config
+            - secretRef:
+                name: api-secrets
+            resources:
+              requests:
+                memory: "1Gi"
+                cpu: "500m"
+              limits:
+                memory: "2Gi"
+                cpu: "1"

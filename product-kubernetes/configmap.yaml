@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+  namespace: analytics
+data:
+  spring.profiles.active: "production"
+  LOG_LEVEL: "INFO"
+  METRICS_ENABLED: "true"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-config
+  namespace: analytics
+data:
+  API_BASE_URL: "http://analytics-api.analytics.svc.cluster.local"
+  FEATURE_FLAGS: "{}"
