@@ -424,4 +424,4 @@ Full manual walkthrough, including one-time state-backend bootstrap, is document
 
 ## License
 
-This project is licensed and owned by **Learnsyte Learning Private Limited (Skillfyme)**. All rights reserved.
+Learnsyte Learning Private Limited (Skillfyme). All rights reserved.
