@@ -49,7 +49,7 @@ variable "single_nat_gateway" {
 variable "k8s_version" {
   description = "EKS Kubernetes version"
   type        = string
-  default     = "1.27"
+  default     = "1.35"
 }
 
 variable "eks_public_access_enabled" {

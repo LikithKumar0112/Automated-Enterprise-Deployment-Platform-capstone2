@@ -58,9 +58,12 @@ resource "aws_subnet" "private" {
 }
 
 resource "aws_eip" "nat" {
-  count  = var.single_nat_gateway ? 1 : var.az_count
-  domain = "vpc"
-  tags   = merge(var.tags, { Name = "${var.name_prefix}-nat-eip-${count.index}" })
+  count = var.single_nat_gateway ? 1 : var.az_count
+  # "domain" only became a settable argument in AWS provider v5.x - this repo
+  # pins "~> 4.0" (resolved 4.67.0), where it's computed-only. "vpc = true" is
+  # the equivalent input on that version.
+  vpc  = true
+  tags = merge(var.tags, { Name = "${var.name_prefix}-nat-eip-${count.index}" })
 }
 
 resource "aws_nat_gateway" "this" {
@@ -113,13 +116,14 @@ resource "aws_flow_log" "this" {
   log_destination_type = "cloud-watch-logs"
   log_destination      = aws_cloudwatch_log_group.flow_log.arn
   iam_role_arn         = aws_iam_role.flow_log.arn
-  tags                 = var.tags
+  # no explicit "tags" here - see the note on aws_cloudwatch_log_group.flow_log above.
 }
 
 resource "aws_cloudwatch_log_group" "flow_log" {
   name              = "/aws/vpc-flow-logs/${var.name_prefix}"
   retention_in_days = 30
-  tags              = var.tags
+  # no explicit "tags" here - identical to the provider's default_tags
+  # block, and recent AWS provider versions reject that as redundant.
 }
 
 resource "aws_iam_role" "flow_log" {
@@ -133,8 +137,7 @@ resource "aws_iam_role" "flow_log" {
       Principal = { Service = "vpc-flow-logs.amazonaws.com" }
     }]
   })
-
-  tags = var.tags
+  # no explicit "tags" here - see the note on aws_cloudwatch_log_group.flow_log above.
 }
 
 resource "aws_iam_role_policy" "flow_log" {

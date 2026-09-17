@@ -1,1 +1,13 @@
 .DS_Store
+
+# Maven build output for the app/ stubs (see app/api/pom.xml)
+app/**/target/
+
+# Files staged into product-docker/ by build-scripts/stage-local-app.sh -
+# regenerated locally, not committed (mirrors the real Jenkinsfile copying
+# these in from a separate analytics-app checkout rather than git).
+product-docker/target/
+product-docker/dist/
+product-docker/application-prod.yml
+product-docker/nginx.conf
+product-docker/mime.types

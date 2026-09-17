@@ -55,7 +55,17 @@ resource "aws_eks_node_group" "this" {
   capacity_type  = each.value.capacity_type
 
   labels = merge(each.value.labels, { component = each.key })
-  taint  = each.value.taints
+
+  # "taint" is a repeatable nested block in this resource's schema, not a
+  # plain attribute - can't assign a list to it directly with "=".
+  dynamic "taint" {
+    for_each = each.value.taints
+    content {
+      key    = taint.value.key
+      value  = taint.value.value
+      effect = taint.value.effect
+    }
+  }
 
   update_config {
     max_unavailable_percentage = 33
@@ -80,8 +90,8 @@ resource "aws_iam_role" "eks_cluster" {
       Principal = { Service = "eks.amazonaws.com" }
     }]
   })
-
-  tags = var.tags
+  # no explicit "tags" here - identical to the provider's default_tags
+  # block, and recent AWS provider versions reject that as redundant.
 }
 
 resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
@@ -101,8 +111,7 @@ resource "aws_iam_role" "eks_node" {
       Principal = { Service = "ec2.amazonaws.com" }
     }]
   })
-
-  tags = var.tags
+  # no explicit "tags" here - see the note on aws_iam_role.eks_cluster above.
 }
 
 resource "aws_iam_role_policy_attachment" "eks_node_worker_policy" {
@@ -130,8 +139,53 @@ resource "aws_iam_openid_connect_provider" "eks_oidc" {
   client_id_list  = ["sts.amazonaws.com"]
   thumbprint_list = [data.tls_certificate.eks_oidc.certificates[0].sha1_fingerprint]
   url             = aws_eks_cluster.this.identity[0].oidc[0].issuer
+  # no explicit "tags" here - see the note on aws_iam_role.eks_cluster above.
+}
 
-  tags = var.tags
+# EBS CSI driver - NOT installed by EKS automatically (the in-tree "gp2"
+# storage class shown by `kubectl get storageclass` still references the
+# old provisioner name, but actual provisioning always routes through this
+# CSI driver on modern EKS). Without it, any PersistentVolumeClaim (Grafana,
+# Prometheus - see monitoring/dashboards/kube-prometheus-stack-values.yaml)
+# sits in Pending forever with "waiting for external provisioner
+# ebs.csi.aws.com" and no further error - confirmed via
+# `kubectl describe pvc` 2026-09-17.
+resource "aws_iam_role" "ebs_csi_driver" {
+  name = "${var.cluster_name}-ebs-csi-driver-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRoleWithWebIdentity"
+      Effect = "Allow"
+      Principal = {
+        Federated = aws_iam_openid_connect_provider.eks_oidc.arn
+      }
+      Condition = {
+        StringEquals = {
+          "${replace(aws_iam_openid_connect_provider.eks_oidc.url, "https://", "")}:sub" = "system:serviceaccount:kube-system:ebs-csi-controller-sa"
+          "${replace(aws_iam_openid_connect_provider.eks_oidc.url, "https://", "")}:aud" = "sts.amazonaws.com"
+        }
+      }
+    }]
+  })
+  # no explicit "tags" here - see the note on aws_iam_role.eks_cluster above.
+}
+
+resource "aws_iam_role_policy_attachment" "ebs_csi_driver" {
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+  role       = aws_iam_role.ebs_csi_driver.name
+}
+
+resource "aws_eks_addon" "ebs_csi_driver" {
+  cluster_name             = aws_eks_cluster.this.name
+  addon_name               = "aws-ebs-csi-driver"
+  service_account_role_arn = aws_iam_role.ebs_csi_driver.arn
+  resolve_conflicts        = "OVERWRITE"
+
+  # needs a node to actually schedule its controller pods onto
+  depends_on = [aws_eks_node_group.this]
+  # no explicit "tags" here - see the note on aws_iam_role.eks_cluster above.
 }
 
 resource "aws_kms_key" "eks_encryption" {
@@ -139,8 +193,7 @@ resource "aws_kms_key" "eks_encryption" {
   deletion_window_in_days = 30
   enable_key_rotation     = true
   policy                  = data.aws_iam_policy_document.kms_key_policy.json
-
-  tags = var.tags
+  # no explicit "tags" here - see the note on aws_iam_role.eks_cluster above.
 }
 
 data "aws_caller_identity" "current" {}

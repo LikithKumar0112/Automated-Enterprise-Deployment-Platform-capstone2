@@ -244,9 +244,28 @@ spec:
             steps {
                 script {
                     dir('infra/monitoring') {
+                        // Was: `kubectl apply -f dashboards/ -n monitoring` alone -
+                        // dashboards/ holds a Helm values file and a raw Grafana
+                        // dashboard JSON, neither a valid manifest, so that line
+                        // could never succeed. This stage also never actually
+                        // installed the Prometheus/Grafana chart at all. Fixed to
+                        // match the sequence verified working by hand, 2026-09-17.
                         sh '''
+                        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+                        helm repo update
+                        helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+                            --namespace monitoring --create-namespace \
+                            -f dashboards/kube-prometheus-stack-values.yaml \
+                            --set grafana.adminPassword=$GRAFANA_PASSWORD
+
                         kubectl apply -k efk/
-                        kubectl apply -f dashboards/ -n monitoring
+
+                        # dashboardsConfigMaps.default in the values file above expects
+                        # this ConfigMap to exist - create-or-update, not a plain apply,
+                        # since the raw JSON isn't itself a Kubernetes manifest.
+                        kubectl create configmap grafana-analytics-dashboard \
+                            --from-file=dashboards/grafana-analytics-dashboard.json \
+                            -n monitoring --dry-run=client -o yaml | kubectl apply -f -
                         '''
                     }
                 }

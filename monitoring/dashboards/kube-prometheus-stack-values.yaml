@@ -15,9 +15,16 @@ prometheus:
           accessModes: ["ReadWriteOnce"]
           resources:
             requests: {storage: 100Gi}
+    # Reference sizing (memory: 4Gi, cpu: 2) assumes real production nodes.
+    # This account's node groups are capped at m7i-flex.large (2 vCPU/8GiB
+    # total per node - see product-infrastructure/environments/*/*.tfvars),
+    # so a 2-vCPU request can never be scheduled: confirmed via
+    # `kubectl describe pod` showing "0/2 nodes are available: Insufficient
+    # cpu" indefinitely, 2026-09-17. Right-sized to actually fit alongside
+    # everything else already running on a 2-node cluster.
     resources:
-      requests: {memory: 4Gi, cpu: 2}
-      limits: {memory: 8Gi, cpu: 4}
+      requests: {memory: 512Mi, cpu: 250m}
+      limits: {memory: 1Gi, cpu: 500m}
 
   alertmanager:
     alertmanagerSpec:

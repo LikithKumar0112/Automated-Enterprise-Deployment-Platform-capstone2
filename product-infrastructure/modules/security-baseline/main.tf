@@ -15,7 +15,8 @@ resource "aws_kms_key" "secrets" {
   description             = "Secrets encryption key for ${var.name_prefix}"
   deletion_window_in_days = 30
   enable_key_rotation     = true
-  tags                    = var.tags
+  # no explicit "tags" here - identical to the provider's default_tags
+  # block, and recent AWS provider versions reject that as redundant.
 }
 
 resource "aws_kms_alias" "secrets" {
@@ -30,7 +31,13 @@ resource "aws_secretsmanager_secret" "app" {
   for_each   = toset(var.secret_names)
   name       = "${var.name_prefix}/${each.key}"
   kms_key_id = aws_kms_key.secrets.arn
-  tags       = var.tags
+  # Secrets Manager soft-deletes by default (~30-day recovery window) -
+  # `terraform destroy` then `apply` again with the same name (this repo's
+  # actual workflow, given the account's shared vCPU quota forces frequent
+  # destroy/recreate cycles between environments) fails with "already
+  # scheduled for deletion" otherwise. Immediate delete, no recovery window.
+  recovery_window_in_days = 0
+  # no explicit "tags" here - see the note on aws_kms_key.secrets above.
 }
 
 # IAM role assumed by Jenkins (product-deployment-pipeline/Jenkinsfile
@@ -47,8 +54,7 @@ resource "aws_iam_role" "ci_deploy" {
       Condition = { StringEquals = { "sts:ExternalId" = var.name_prefix } }
     }]
   })
-
-  tags = var.tags
+  # no explicit "tags" here - see the note on aws_kms_key.secrets above.
 }
 
 resource "aws_iam_role_policy" "ci_deploy" {
@@ -148,6 +154,5 @@ resource "aws_wafv2_web_acl" "alb" {
     metric_name                = "${var.name_prefix}-waf"
     sampled_requests_enabled   = true
   }
-
-  tags = var.tags
+  # no explicit "tags" here - see the note on aws_kms_key.secrets above.
 }

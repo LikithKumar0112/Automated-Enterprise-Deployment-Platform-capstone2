@@ -8,7 +8,11 @@
 # See build-scripts/ for wrappers around these commands.
 
 # ---- shared base for the two JVM components ----
-FROM openjdk:11-jre-slim AS jvm-base
+# openjdk:11-jre-slim was pulled from Docker Hub (the openjdk Official Image
+# was deprecated by its maintainers and old tags were later removed) -
+# eclipse-temurin is the actively-maintained, Debian-based successor, so the
+# apt-get/groupadd/useradd lines below don't need to change.
+FROM eclipse-temurin:11-jre-jammy AS jvm-base
 RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 RUN groupadd -g 1001 appgroup && useradd -r -u 1001 -g appgroup appuser
 WORKDIR /app
@@ -21,7 +25,13 @@ RUN chown -R appuser:appgroup /app
 USER appuser
 EXPOSE 8080
 ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
-ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar app.jar --spring.config.location=file:/app/config/"]
+# additional-location (not location) - "location" REPLACES Spring Boot's
+# default config search path instead of adding to it, which would silently
+# drop the classpath application.yml that enables the actuator health-probe
+# groups (/actuator/health/liveness, /actuator/health/readiness - what
+# product-kubernetes/deployment.yaml's probes target) and the Prometheus
+# endpoint (product-kubernetes/deployment.yaml's prometheus.io/* annotations).
+ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar app.jar --spring.config.additional-location=file:/app/config/"]
 
 # ---- data-processor target ----
 FROM jvm-base AS data-processor

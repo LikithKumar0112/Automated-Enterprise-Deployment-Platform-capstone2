@@ -55,13 +55,22 @@ module "vpc_networking" {
 module "eks_cluster" {
   source = "./modules/eks-cluster"
 
-  cluster_name           = local.name_prefix
-  k8s_version            = var.k8s_version
-  private_subnet_ids     = module.vpc_networking.private_subnet_ids
-  public_access_enabled  = var.eks_public_access_enabled
-  public_access_cidrs    = var.eks_public_access_cidrs
-  node_groups            = var.node_groups
-  tags                   = local.common_tags
+  cluster_name          = local.name_prefix
+  k8s_version           = var.k8s_version
+  private_subnet_ids    = module.vpc_networking.private_subnet_ids
+  public_access_enabled = var.eks_public_access_enabled
+  public_access_cidrs   = var.eks_public_access_cidrs
+  node_groups           = var.node_groups
+  tags                  = local.common_tags
+
+  # EKS auto-creates /aws/eks/<cluster>/cluster itself the moment control-
+  # plane logging activates (enabled_cluster_log_types, set at cluster
+  # creation) - with no ordering guarantee against this module and
+  # monitoring_stack's own explicit aws_cloudwatch_log_group.eks_control_plane
+  # resource, it's a race: whichever side creates it second gets
+  # ResourceAlreadyExistsException. Forcing the log group to exist first
+  # means EKS just finds and uses it instead of trying to create its own.
+  depends_on = [module.monitoring_stack]
 }
 
 module "security_baseline" {

@@ -16,3 +16,4 @@ terraform {
     dynamodb_table       = "analytics-tf-lock"
   }
 }
+
