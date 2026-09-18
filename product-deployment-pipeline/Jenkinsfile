@@ -172,6 +172,12 @@ pipeline {
 
                     kubectl apply -k efk/
 
+                    # kube-prometheus-stack only discovers scrape targets via
+                    # ServiceMonitor/PodMonitor CRDs - without this,
+                    # analytics-api never appears in Prometheus at all despite
+                    # everything else succeeding (see §14 of docs/e2e-manual.html)
+                    kubectl apply -f dashboards/analytics-api-servicemonitor.yaml
+
                     kubectl create configmap grafana-analytics-dashboard \
                         --from-file=dashboards/grafana-analytics-dashboard.json \
                         -n monitoring --dry-run=client -o yaml | kubectl apply -f -
