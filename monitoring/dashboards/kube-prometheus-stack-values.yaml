@@ -75,29 +75,42 @@ alertmanagerFiles:
       - channel: '#operations-warnings'
         send_resolved: true
 
-prometheusRule:
-  groups:
-  - name: analytics-platform
-    rules:
-    - alert: HighErrorRate
-      expr: |
-        rate(http_requests_total{status=~"5.."}[5m]) * 100 / rate(http_requests_total[5m]) > 5
-      for: 5m
-      labels: {severity: critical, team: analytics}
-      annotations:
-        summary: "High error rate detected"
-        description: "Error rate is {{ $value }}% for service {{ $labels.service }}"
-    - alert: PodCrashLooping
-      expr: rate(kube_pod_container_status_restarts_total[15m]) * 60 * 15 > 3
-      for: 2m
-      labels: {severity: warning, team: analytics}
-      annotations:
-        summary: "Container restarting too frequently"
-        description: "Container {{ $labels.container }} in pod {{ $labels.pod }} is restarting frequently"
-    - alert: DeploymentStuck
-      expr: kube_deployment_status_replicas_unavailable > 0
-      for: 10m
-      labels: {severity: critical, team: analytics}
-      annotations:
-        summary: "Deployment stuck with unavailable replicas"
-        description: "Deployment {{ $labels.deployment }} has {{ $value }} unavailable replicas"
+# `prometheusRule:` (bare top-level key) is not a recognized value path in
+# this chart at all - Helm silently ignores unrecognized keys, so this rule
+# group was never actually created as a PrometheusRule resource despite the
+# chart being installed successfully every time (confirmed: no matching
+# PrometheusRule existed even after re-running helm upgrade, 2026-09-17).
+# additionalPrometheusRulesMap is the chart's real mechanism for injecting
+# custom rule groups.
+additionalPrometheusRulesMap:
+  analytics-platform-rules:
+    groups:
+    - name: analytics-platform
+      rules:
+      - alert: HighErrorRate
+        # http_requests_total doesn't exist - Spring Boot/Micrometer exposes
+        # http_server_requests_seconds_count instead (confirmed via
+        # analytics-api's own /actuator/prometheus output, 2026-09-17). The
+        # original expr could never match anything, so this alert could never
+        # fire regardless of real error rate.
+        expr: |
+          sum(rate(http_server_requests_seconds_count{job="analytics-api",status=~"5.."}[5m])) * 100 / sum(rate(http_server_requests_seconds_count{job="analytics-api"}[5m])) > 5
+        for: 5m
+        labels: {severity: critical, team: analytics}
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value }}% for service {{ $labels.service }}"
+      - alert: PodCrashLooping
+        expr: rate(kube_pod_container_status_restarts_total[15m]) * 60 * 15 > 3
+        for: 2m
+        labels: {severity: warning, team: analytics}
+        annotations:
+          summary: "Container restarting too frequently"
+          description: "Container {{ $labels.container }} in pod {{ $labels.pod }} is restarting frequently"
+      - alert: DeploymentStuck
+        expr: kube_deployment_status_replicas_unavailable > 0
+        for: 10m
+        labels: {severity: critical, team: analytics}
+        annotations:
+          summary: "Deployment stuck with unavailable replicas"
+          description: "Deployment {{ $labels.deployment }} has {{ $value }} unavailable replicas"

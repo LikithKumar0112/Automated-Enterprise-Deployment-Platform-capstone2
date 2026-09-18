@@ -1,0 +1,44 @@
+# Nothing previously configured Fluentd's own parsing - it fell back to a
+# default that doesn't understand containerd's CRI log format (what every
+# modern EKS node actually produces; Docker/dockershim is gone since 1.24).
+# Every line failed to parse, and the resulting warning was itself tailed
+# and re-logged, causing exponential self-referential log growth (confirmed
+# via fluentd's own container logs, 2026-09-17) - and zero real log data
+# ever reached Elasticsearch, despite fluentd showing "Running" the whole time.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluentd-config
+  namespace: logging
+data:
+  fluent.conf: |
+    <source>
+      @type tail
+      @id in_tail_container_logs
+      path /var/log/containers/*.log
+      # avoid re-tailing fluentd's own output - the root cause of the loop above
+      exclude_path ["/var/log/containers/fluentd*"]
+      pos_file /var/log/fluentd-containers.log.pos
+      tag kubernetes.*
+      read_from_head true
+      <parse>
+        @type regexp
+        expression /^(?<time>.+) (?<stream>stdout|stderr) (?<flag>[FP]) (?<log>.*)$/
+        time_format %Y-%m-%dT%H:%M:%S.%N%:z
+      </parse>
+    </source>
+
+    <filter kubernetes.**>
+      @type kubernetes_metadata
+    </filter>
+
+    <match kubernetes.**>
+      @type elasticsearch
+      host "#{ENV['FLUENT_ELASTICSEARCH_HOST']}"
+      port "#{ENV['FLUENT_ELASTICSEARCH_PORT']}"
+      logstash_format true
+      logstash_prefix fluentd
+      <buffer>
+        flush_interval 5s
+      </buffer>
+    </match>

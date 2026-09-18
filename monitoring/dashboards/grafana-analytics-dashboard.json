@@ -10,7 +10,7 @@
       "type": "graph",
       "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
       "targets": [
-        { "expr": "sum(rate(http_requests_total{app=\"analytics-api\"}[5m]))" }
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"analytics-api\"}[5m]))" }
       ]
     },
     {
@@ -19,7 +19,7 @@
       "type": "graph",
       "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
       "targets": [
-        { "expr": "sum(rate(http_requests_total{app=\"analytics-api\",status=~\"5..\"}[5m])) / sum(rate(http_requests_total{app=\"analytics-api\"}[5m])) * 100" }
+        { "expr": "(sum(rate(http_server_requests_seconds_count{job=\"analytics-api\",status=~\"5..\"}[5m])) or vector(0)) / sum(rate(http_server_requests_seconds_count{job=\"analytics-api\"}[5m])) * 100" }
       ]
     },
     {
@@ -37,7 +37,7 @@
       "type": "graph",
       "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
       "targets": [
-        { "expr": "node_cpu_utilization" }
+        { "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)" }
       ]
     }
   ]

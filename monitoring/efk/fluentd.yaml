@@ -35,11 +35,19 @@ spec:
         - name: containers
           mountPath: /var/lib/docker/containers
           readOnly: true
+        # provides the CRI-aware parsing config - see the note in
+        # monitoring/efk/fluentd-config.yaml for why this is required
+        - name: config-volume
+          mountPath: /fluentd/etc/fluent.conf
+          subPath: fluent.conf
       volumes:
       - name: varlog
         hostPath: {path: /var/log}
       - name: containers
         hostPath: {path: /var/lib/docker/containers}
+      - name: config-volume
+        configMap:
+          name: fluentd-config
 ---
 apiVersion: v1
 kind: ServiceAccount
