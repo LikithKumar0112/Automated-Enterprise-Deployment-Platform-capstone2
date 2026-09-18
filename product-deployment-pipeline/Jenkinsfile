@@ -38,16 +38,18 @@ pipeline {
         }
 
         stage('Security Scan') {
+            // Checkov only here - it scans Terraform source, doesn't need a
+            // built image. Trivy moved into Build & Test, right after the
+            // image is actually built and before it's pushed - it used to
+            // run here too, against a tag that couldn't exist yet (Security
+            // Scan ran before Build & Test), so it always failed to find the
+            // image and never scanned anything real. Confirmed via a real
+            // pipeline run, 2026-09-18. SonarQube dropped - no server
+            // available in this environment.
             when { expression { params.SECURITY_SCAN == true } }
             steps {
                 script {
-                    // SonarQube dropped - no server available in this environment.
-                    sh '''
-                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-                        aquasec/trivy:latest image --exit-code 0 --severity HIGH,CRITICAL \
-                        ${ECR_REGISTRY}/analytics-api:${IMAGE_TAG} || true
-                    docker run --rm -v "${WORKSPACE}/product-infrastructure:/iac" bridgecrew/checkov -d /iac --compact || true
-                    '''
+                    sh 'docker run --rm -v "${WORKSPACE}/product-infrastructure:/iac" bridgecrew/checkov -d /iac --compact || true'
                 }
             }
         }
@@ -66,7 +68,17 @@ pipeline {
                     docker build --target api            -t ${ECR_REGISTRY}/analytics-api:${IMAGE_TAG} .
                     docker build --target webapp          -t ${ECR_REGISTRY}/analytics-web:${IMAGE_TAG} .
                     docker build --target data-processor  -t ${ECR_REGISTRY}/analytics-data-processor:${IMAGE_TAG} .
-
+                    '''
+                    if (params.SECURITY_SCAN) {
+                        // Scans the image that was just actually built, locally -
+                        // before it ever reaches the registry.
+                        sh '''
+                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                            aquasec/trivy:latest image --exit-code 0 --severity HIGH,CRITICAL \
+                            ${ECR_REGISTRY}/analytics-api:${IMAGE_TAG} || true
+                        '''
+                    }
+                    sh '''
                     aws ecr get-login-password --region ${AWS_REGION} | \
                         docker login --username AWS --password-stdin ${ECR_REGISTRY}
                     docker push ${ECR_REGISTRY}/analytics-api:${IMAGE_TAG}

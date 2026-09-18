@@ -17,16 +17,16 @@
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <!-- source/target (not an explicit maven-compiler-plugin version +
-         --release flag) - the --release flag requires this exact JDK to
-         have release-11 platform data bundled, which failed on the Jenkins
-         host even though app/api's identical Java-11 target compiled fine
-         one step earlier using this same properties-based style (Spring
-         Boot's parent POM convention). Confirmed via a real pipeline run,
-         2026-09-18. The compiled bytecode still has to run inside
-         eclipse-temurin:11-jre-jammy (product-docker/Dockerfile), so this
-         can't just be bumped to a newer target - it has to actually compile
-         at 11, just via the style that's proven to work here. -->
+    <!-- source/target properties (not an explicit maven-compiler-plugin
+         version plus a release flag) - that release flag requires this
+         exact JDK to have release-11 platform data bundled, which failed on
+         the Jenkins host even though app/api's identical Java-11 target
+         compiled fine one step earlier using this same properties-based
+         style (Spring Boot's parent POM convention). Confirmed via a real
+         pipeline run, 2026-09-18. The compiled bytecode still has to run
+         inside eclipse-temurin:11-jre-jammy (product-docker/Dockerfile), so
+         this can't just be bumped to a newer target - it has to actually
+         compile at 11, just via the style that's proven to work here. -->
     <maven.compiler.source>11</maven.compiler.source>
     <maven.compiler.target>11</maven.compiler.target>
   </properties>
