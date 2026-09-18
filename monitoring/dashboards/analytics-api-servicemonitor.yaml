@@ -1,9 +1,3 @@
-# kube-prometheus-stack's Prometheus only discovers scrape targets via
-# ServiceMonitor/PodMonitor CRDs (serviceMonitorSelector.matchLabels:
-# release=monitoring on the Prometheus CR) - it does NOT use the legacy
-# prometheus.io/scrape annotations product-kubernetes/deployment.yaml sets
-# on analytics-api. Without this resource, analytics-api never appears in
-# Prometheus's target list at all - confirmed via the API, 2026-09-17.
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:

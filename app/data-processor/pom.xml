@@ -1,10 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-  Minimal stub for the analytics-data-processor CronJob (see the note in
-  app/api/pom.xml on why this exists). Deliberately dependency-free - it's an
-  hourly batch job, not a service, so it doesn't need Spring Boot or an HTTP
-  server; product-kubernetes/deployment.yaml defines no probes for it either.
--->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
@@ -17,16 +11,6 @@
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <!-- source/target properties (not an explicit maven-compiler-plugin
-         version plus a release flag) - that release flag requires this
-         exact JDK to have release-11 platform data bundled, which failed on
-         the Jenkins host even though app/api's identical Java-11 target
-         compiled fine one step earlier using this same properties-based
-         style (Spring Boot's parent POM convention). Confirmed via a real
-         pipeline run, 2026-09-18. The compiled bytecode still has to run
-         inside eclipse-temurin:11-jre-jammy (product-docker/Dockerfile), so
-         this can't just be bumped to a newer target - it has to actually
-         compile at 11, just via the style that's proven to work here. -->
     <maven.compiler.source>11</maven.compiler.source>
     <maven.compiler.target>11</maven.compiler.target>
   </properties>

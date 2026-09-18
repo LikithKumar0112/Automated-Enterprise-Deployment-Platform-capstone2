@@ -1,10 +1,3 @@
-# Nothing previously configured Fluentd's own parsing - it fell back to a
-# default that doesn't understand containerd's CRI log format (what every
-# modern EKS node actually produces; Docker/dockershim is gone since 1.24).
-# Every line failed to parse, and the resulting warning was itself tailed
-# and re-logged, causing exponential self-referential log growth (confirmed
-# via fluentd's own container logs, 2026-09-17) - and zero real log data
-# ever reached Elasticsearch, despite fluentd showing "Running" the whole time.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -16,7 +9,6 @@ data:
       @type tail
       @id in_tail_container_logs
       path /var/log/containers/*.log
-      # avoid re-tailing fluentd's own output - the root cause of the loop above
       exclude_path ["/var/log/containers/fluentd*"]
       pos_file /var/log/fluentd-containers.log.pos
       tag kubernetes.*

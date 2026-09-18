@@ -38,13 +38,6 @@ spec:
           value: "elasticsearch-0,elasticsearch-1,elasticsearch-2"
         - name: ES_JAVA_OPTS
           value: "-Xms1g -Xmx1g"
-        # ES 8.x enables X-Pack security by default, which requires TLS on
-        # the inter-node transport layer - with none configured, every node
-        # fails its own bootstrap check on every startup and crash-loops
-        # forever (confirmed via pod logs: "Transport SSL must be enabled if
-        # security is enabled", 2026-09-17). No PKI/cert infrastructure exists
-        # in this repo, so disable security rather than half-configure TLS -
-        # acceptable for this single-tenant dev cluster, not for production.
         - name: xpack.security.enabled
           value: "false"
         - name: xpack.security.transport.ssl.enabled

@@ -8,16 +8,6 @@ metadata:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/healthcheck-path: /actuator/health
-    # HTTP-only until a real domain + ACM cert exist. A placeholder
-    # certificate-arn isn't silently ignored - the controller fails to
-    # create the HTTPS listener entirely (CertificateNotFound), which
-    # breaks the whole ALB, not just TLS. Confirmed via a real Jenkins
-    # pipeline run repeatedly re-applying this file from git and re-breaking
-    # a manually-fixed ALB every time, 2026-09-18 (see §14 of
-    # docs/e2e-manual.html). To enable real HTTPS: request/validate a cert
-    # in ACM for your real domain, then add back:
-    #   alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS-1-2-Ext-2018-06
-    #   alb.ingress.kubernetes.io/certificate-arn: <your real ACM cert ARN>
 spec:
   rules:
   - host: api.analytics.company.com
@@ -41,7 +31,6 @@ metadata:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/healthcheck-path: /health
-    # HTTP-only for now - see the note on the analytics-api Ingress above.
 spec:
   rules:
   - host: app.analytics.company.com

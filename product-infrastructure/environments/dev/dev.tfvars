@@ -14,14 +14,6 @@ node_groups = {
     desired_size = 2
     max_size     = 3
     min_size     = 1
-    # t3.medium is NOT free-tier-eligible on this account, and the block
-    # applies to BOTH Spot and On-Demand launches alike (confirmed via ASG
-    # scaling-activity errors on this exact node group, 2026-09-16 - Spot
-    # failed first, then On-Demand failed with the identical message).
-    # m7i-flex.large IS free-tier-eligible on this account (confirmed via
-    # `aws ec2 describe-instance-types --filters Name=free-tier-eligible,
-    # Values=true`) and is what this EC2 instance itself runs as - 2 vCPU,
-    # 8GiB RAM, x86_64 (matches the AL2023_x86_64_STANDARD node AMI).
     instance_types = ["m7i-flex.large"]
     capacity_type  = "ON_DEMAND"
     labels         = {}

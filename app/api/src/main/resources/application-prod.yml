@@ -1,16 +1,3 @@
-# Staged (not committed under product-docker/ - see build-scripts/stage-local-app.sh)
-# into /app/config by product-docker/Dockerfile's `COPY application-prod.yml config/`,
-# then loaded via --spring.config.location=file:/app/config/.
-#
-# NOTE: product-kubernetes/configmap.yaml sets spring.profiles.active to
-# "production", but Spring Boot's profile-specific file convention would look
-# for "application-production.yml" for that profile name - not
-# "application-prod.yml". So this file's keys are NOT guaranteed to be picked
-# up as a profile-specific override under the "production" profile as
-# currently configured; core server/actuator config lives in the bundled
-# src/main/resources/application.yml instead so the app runs correctly
-# either way. Rename this file (or the ConfigMap's profile value) to align
-# them if you want this file's overrides to actually take effect.
 logging:
   level:
     root: INFO

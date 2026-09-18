@@ -13,8 +13,6 @@ terraform {
 
 resource "aws_sns_topic" "alerts" {
   name = "${var.name_prefix}-alerts"
-  # no explicit "tags" here - identical to the provider's default_tags
-  # block, and recent AWS provider versions reject that as redundant.
 }
 
 resource "aws_sns_topic_subscription" "email" {
@@ -34,7 +32,6 @@ resource "aws_sns_topic_subscription" "slack" {
 resource "aws_cloudwatch_log_group" "eks_control_plane" {
   name              = "/aws/eks/${var.cluster_name}/cluster"
   retention_in_days = var.log_retention_days
-  # no explicit "tags" here - see the note on aws_sns_topic.alerts above.
 }
 
 resource "aws_cloudwatch_metric_alarm" "node_cpu_high" {
@@ -50,7 +47,6 @@ resource "aws_cloudwatch_metric_alarm" "node_cpu_high" {
   alarm_actions       = [aws_sns_topic.alerts.arn]
   ok_actions          = [aws_sns_topic.alerts.arn]
   dimensions          = { ClusterName = var.cluster_name }
-  # no explicit "tags" here - see the note on aws_sns_topic.alerts above.
 }
 
 resource "aws_cloudwatch_metric_alarm" "node_memory_high" {
@@ -66,7 +62,6 @@ resource "aws_cloudwatch_metric_alarm" "node_memory_high" {
   alarm_actions       = [aws_sns_topic.alerts.arn]
   ok_actions          = [aws_sns_topic.alerts.arn]
   dimensions          = { ClusterName = var.cluster_name }
-  # no explicit "tags" here - see the note on aws_sns_topic.alerts above.
 }
 
 resource "aws_cloudwatch_dashboard" "main" {

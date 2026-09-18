@@ -26,11 +26,6 @@ pipeline {
         stage('Initialize') {
             steps {
                 script {
-                    // No withVault - AWS creds already live in the jenkins
-                    // system user's ~/.aws/credentials (set up once, outside
-                    // this pipeline). No explicit checkout either - Jenkins
-                    // already pulled this repo into the workspace root to
-                    // load this Jenkinsfile in the first place.
                     env.JENKINS_ROLE_ARN = sh(script: 'aws sts get-caller-identity --query Arn --output text', returnStdout: true).trim()
                     sh 'aws sts get-caller-identity'
                 }
@@ -38,14 +33,6 @@ pipeline {
         }
 
         stage('Security Scan') {
-            // Checkov only here - it scans Terraform source, doesn't need a
-            // built image. Trivy moved into Build & Test, right after the
-            // image is actually built and before it's pushed - it used to
-            // run here too, against a tag that couldn't exist yet (Security
-            // Scan ran before Build & Test), so it always failed to find the
-            // image and never scanned anything real. Confirmed via a real
-            // pipeline run, 2026-09-18. SonarQube dropped - no server
-            // available in this environment.
             when { expression { params.SECURITY_SCAN == true } }
             steps {
                 script {
@@ -60,8 +47,6 @@ pipeline {
                     if (params.RUN_TESTS) {
                         sh 'cd app/api && mvn -q test'
                     }
-                    // Reuses the exact staging + build steps already verified
-                    // working by hand - see §04 of docs/e2e-manual.html.
                     sh '''
                     cd product-docker
                     ./build-scripts/stage-local-app.sh
@@ -70,8 +55,6 @@ pipeline {
                     docker build --target data-processor  -t ${ECR_REGISTRY}/analytics-data-processor:${IMAGE_TAG} .
                     '''
                     if (params.SECURITY_SCAN) {
-                        // Scans the image that was just actually built, locally -
-                        // before it ever reaches the registry.
                         sh '''
                         docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
                             aquasec/trivy:latest image --exit-code 0 --severity HIGH,CRITICAL \
@@ -172,9 +155,6 @@ pipeline {
         stage('Smoke Tests') {
             steps {
                 script {
-                    // Plain HTTP + explicit Host header - no ACM cert exists yet
-                    // (see §08 of docs/e2e-manual.html). Switch to https + -f once
-                    // a real certificate-arn replaces ingress.yaml's placeholder.
                     sh '''
                     API_URL=$(kubectl get ingress analytics-api -n analytics -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
                     curl -f -H "Host: api.analytics.company.com" http://${API_URL}/actuator/health
@@ -198,10 +178,6 @@ pipeline {
 
                     kubectl apply -k efk/
 
-                    # kube-prometheus-stack only discovers scrape targets via
-                    # ServiceMonitor/PodMonitor CRDs - without this,
-                    # analytics-api never appears in Prometheus at all despite
-                    # everything else succeeding (see §14 of docs/e2e-manual.html)
                     kubectl apply -f dashboards/analytics-api-servicemonitor.yaml
 
                     kubectl create configmap grafana-analytics-dashboard \

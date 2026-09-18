@@ -1,10 +1,4 @@
 #!/bin/bash
-# Local-dev-only helper: builds the app/ stubs with Maven and copies their
-# output into product-docker/, mirroring what the real Jenkinsfile does for
-# a real analytics-app checkout (`cp -r app/target infra/product-docker/target`).
-# Not part of the CI path - Jenkins never runs this script, it does the
-# equivalent inline against a real app repo. Run this once (or whenever
-# app/ changes) before ./build-scripts/build-all.sh.
 set -e
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"          # product-docker/build-scripts
 DOCKER_DIR="$(dirname "$DIR")"                                # product-docker

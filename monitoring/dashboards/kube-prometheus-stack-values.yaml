@@ -15,13 +15,6 @@ prometheus:
           accessModes: ["ReadWriteOnce"]
           resources:
             requests: {storage: 100Gi}
-    # Reference sizing (memory: 4Gi, cpu: 2) assumes real production nodes.
-    # This account's node groups are capped at m7i-flex.large (2 vCPU/8GiB
-    # total per node - see product-infrastructure/environments/*/*.tfvars),
-    # so a 2-vCPU request can never be scheduled: confirmed via
-    # `kubectl describe pod` showing "0/2 nodes are available: Insufficient
-    # cpu" indefinitely, 2026-09-17. Right-sized to actually fit alongside
-    # everything else already running on a 2-node cluster.
     resources:
       requests: {memory: 512Mi, cpu: 250m}
       limits: {memory: 1Gi, cpu: 500m}
@@ -75,24 +68,12 @@ alertmanagerFiles:
       - channel: '#operations-warnings'
         send_resolved: true
 
-# `prometheusRule:` (bare top-level key) is not a recognized value path in
-# this chart at all - Helm silently ignores unrecognized keys, so this rule
-# group was never actually created as a PrometheusRule resource despite the
-# chart being installed successfully every time (confirmed: no matching
-# PrometheusRule existed even after re-running helm upgrade, 2026-09-17).
-# additionalPrometheusRulesMap is the chart's real mechanism for injecting
-# custom rule groups.
 additionalPrometheusRulesMap:
   analytics-platform-rules:
     groups:
     - name: analytics-platform
       rules:
       - alert: HighErrorRate
-        # http_requests_total doesn't exist - Spring Boot/Micrometer exposes
-        # http_server_requests_seconds_count instead (confirmed via
-        # analytics-api's own /actuator/prometheus output, 2026-09-17). The
-        # original expr could never match anything, so this alert could never
-        # fire regardless of real error rate.
         expr: |
           sum(rate(http_server_requests_seconds_count{job="analytics-api",status=~"5.."}[5m])) * 100 / sum(rate(http_server_requests_seconds_count{job="analytics-api"}[5m])) > 5
         for: 5m

@@ -1,16 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-  Minimal stub for the analytics-api service.
-
-  This repo (Automated-Enterprise-Deployment-Platform) is the deployment
-  backbone only - it intentionally ships no application source. The
-  Jenkinsfile's multi-repo checkout expects a real "analytics-app" repo to
-  supply this. Since that repo doesn't exist for this capstone, this is a
-  minimal, honest stand-in - just enough to satisfy the contracts already
-  defined in product-kubernetes/deployment.yaml (liveness/readiness probes,
-  Prometheus scrape annotation) and product-docker/Dockerfile (a jar named
-  analytics-api-*.jar, an application-prod.yml to copy into /app/config).
--->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
