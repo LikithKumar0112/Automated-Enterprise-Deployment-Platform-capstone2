@@ -89,19 +89,19 @@ pipeline {
             }
         }
 
-    Stage('Snyk Scan') {
-      when { expression { params.SECURITY_SCAN == true } }
-      steps {
-          withCredentials([string(credentialsId: 'snyk-api-token', variable: 'SNYK_TOKEN')]) {
-              sh '''
-              snyk auth ${SNYK_TOKEN}
+        stage('Snyk Scan') {
+            when { expression { params.SECURITY_SCAN == true } }
+            steps {
+                withCredentials([string(credentialsId: 'snyk-api-token', variable: 'SNYK_TOKEN')]) {
+                    sh '''
+                    snyk auth ${SNYK_TOKEN}
 
-              snyk test --file=app/api/pom.xml --severity-threshold=high || true
-              snyk test --file=app/data-processor/pom.xml --severity-threshold=high || true
-              '''
-          }
-      }
-  }
+                    snyk test --file=app/api/pom.xml --severity-threshold=high || true
+                    snyk test --file=app/data-processor/pom.xml --severity-threshold=high || true
+                    '''
+                }
+            }
+        }
 
         stage('Infrastructure Plan') {
             when { expression { params.ACTION in ['plan', 'apply'] } }
@@ -215,7 +215,7 @@ pipeline {
 
     post {
         always {
-g           sh 'docker system prune -f || true'
+            sh 'docker system prune -f || true'
         }
         success {
             echo "✅ Deployment successful: ${env.JOB_NAME} #${env.BUILD_NUMBER} to ${params.ENVIRONMENT}"
