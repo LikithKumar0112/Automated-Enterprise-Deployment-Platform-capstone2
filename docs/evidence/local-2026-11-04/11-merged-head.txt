@@ -1,0 +1,60 @@
+commit: 43d9882 Merge Spring Boot upgrade into submission-fixes
+✅ Staged. product-docker/ now has target/, dist/, application-prod.yml, nginx.conf, mime.types
+   Run ./build-scripts/build-all.sh <tag> next.
+stage exit=0
+docker build analytics-api exit=0
+docker build analytics-web exit=0
+docker build analytics-data-processor exit=0
+--- trivy analytics-api
+Report Summary
+
+┌──────────────────────┬────────┬─────────────────┬─────────┐
+│        Target        │  Type  │ Vulnerabilities │ Secrets │
+├──────────────────────┼────────┼─────────────────┼─────────┤
+│ /scan (ubuntu 22.04) │ ubuntu │        0        │    -    │
+├──────────────────────┼────────┼─────────────────┼─────────┤
+│ app/app.jar          │  jar   │        0        │    -    │
+└──────────────────────┴────────┴─────────────────┴─────────┘
+scan exit=0
+--- trivy analytics-web
+Report Summary
+
+┌───────────────────────┬────────┬─────────────────┬─────────┐
+│        Target         │  Type  │ Vulnerabilities │ Secrets │
+├───────────────────────┼────────┼─────────────────┼─────────┤
+│ /scan (alpine 3.24.3) │ alpine │        0        │    -    │
+└───────────────────────┴────────┴─────────────────┴─────────┘
+scan exit=0
+--- trivy analytics-data-processor
+Report Summary
+
+┌──────────────────────┬────────┬─────────────────┬─────────┐
+│        Target        │  Type  │ Vulnerabilities │ Secrets │
+├──────────────────────┼────────┼─────────────────┼─────────┤
+│ /scan (ubuntu 22.04) │ ubuntu │        0        │    -    │
+├──────────────────────┼────────┼─────────────────┼─────────┤
+│ app/app.jar          │  jar   │        0        │    -    │
+└──────────────────────┴────────┴─────────────────┴─────────┘
+scan exit=0
+$ docker exec ev-api id
+uid=1001(appuser) gid=1001(appgroup) groups=1001(appgroup)
+$ docker exec ev-web id
+uid=1001(appuser) gid=1001(appgroup) groups=1001(appgroup)
+$ health-check.sh http://127.0.0.1:18080 /actuator/health 30 3
+Checking http://127.0.0.1:18080/actuator/health ...
+Attempt 1/30 failed, retrying in 3s...
+Attempt 2/30 failed, retrying in 3s...
+✅ Healthy after 3 attempt(s)
+exit=0
+$ curl -s http://127.0.0.1:18080/actuator/health
+{"groups":["liveness","readiness"],"status":"UP"}
+$ curl -s -o /dev/null -w '%{http_code}' .../actuator/health/liveness
+200
+$ curl -s -o /dev/null -w '%{http_code}' .../actuator/health/readiness
+200
+$ curl -s .../actuator/prometheus | grep -m1 http_server_requests_seconds_count
+http_server_requests_seconds_count{error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/health"} 3
+$ health-check.sh http://127.0.0.1:18081 /health 10 2
+Checking http://127.0.0.1:18081/health ...
+✅ Healthy after 1 attempt(s)
+exit=0

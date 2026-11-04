@@ -12,7 +12,7 @@ Keep the AWS spend short: do steps 4–12 in one sitting, then step 13.
 - [ ] Sign in to AWS as an IAM user or role, **not root**.
 - [ ] Reach Grafana, Kibana, and Prometheus only through `kubectl port-forward`
       on `localhost`, not a public IP. Check that any public Jenkins URL is firewalled to your IP.
-- [ ] On the Jenkins host: install `jq`, `helm`, JDK 17 (needed from step 3), and `snyk`.
+- [ ] On the Jenkins host: install `jq`, `helm`, JDK 17, and `snyk`.
 - [ ] In Jenkins, add **Secret text** credentials `snyk-api-token` and `slack-webhook-url`.
 - [ ] In Slack, create the webhook and channels `#monitoring-alerts`,
       `#operations-critical`, `#operations-warnings`.
@@ -21,9 +21,10 @@ Keep the AWS spend short: do steps 4–12 in one sitting, then step 13.
 
 ## 2. Security gates block (no cluster needed)
 
-- [ ] **Snyk blocks.** Run `dev` / `apply`. It should fail at `Dependency Scan` on
+- [ ] The current code has the fix, so create a demo branch on the vulnerable version: `git branch gate-demo db24ded && git push origin gate-demo`. Use it for the Snyk and Trivy steps, and delete it afterwards.
+- [ ] **Snyk blocks.** Run `dev` / `apply` on `gate-demo`. It should fail at `Dependency Scan` on
       Spring Boot 2.7.18, with Build, Push, and Deploy not run. Save `gate-snyk-blocked.png` (stage view) and `gate-snyk-blocked-log.png`.
-- [ ] **Trivy blocks.** On the Jenkins host, from the repo root:
+- [ ] **Trivy blocks.** On the Jenkins host, with `gate-demo` checked out, from the repo root:
       ```bash
       (cd product-docker && ./build-scripts/stage-local-app.sh && docker build --target api -t analytics-api:scan .)
       product-deployment-pipeline/scripts/scan-image.sh analytics-api:scan; echo "exit=$?"
@@ -44,8 +45,7 @@ Keep the AWS spend short: do steps 4–12 in one sitting, then step 13.
 
 ## 3. Fix the finding, then the gates pass
 
-- [ ] Merge `submission-dependency-upgrade` into `submission-fixes` (Spring Boot 4.1.2, Java 17).
-- [ ] Run `dev` / `plan`. All scans should pass, with Push, Approval, Apply, Deploy, Smoke, and Monitoring skipped, and the log should say `Plan (nothing deployed)`.
+- [ ] Point the job back at `submission-fixes` (Spring Boot 4.1.2, Java 17) and run `dev` / `plan`. All scans should pass, with Push, Approval, Apply, Deploy, Smoke, and Monitoring skipped, and the log should say `Plan (nothing deployed)`.
       Save `gate-all-pass-dev-plan.png`. If a new CVE has been published since, it will block: that is the gate working, so update the dependency.
 
 ## 4. Deploy `dev`
