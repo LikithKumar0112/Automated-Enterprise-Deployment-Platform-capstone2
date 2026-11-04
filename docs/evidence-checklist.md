@@ -21,7 +21,7 @@ Keep the AWS spend short: do steps 4–12 in one sitting, then step 13.
 
 ## 2. Security gates block (no cluster needed)
 
-- [ ] The current code has the fix, so create a demo branch on the vulnerable version: `git branch gate-demo db24ded && git push origin gate-demo`. Use it for the Snyk and Trivy steps, and delete it afterwards.
+- [ ] The current code has the fix, so create a demo branch on the vulnerable version: `git branch gate-demo 7801b0e && git push origin gate-demo`. Use it for the Snyk and Trivy steps, and delete it afterwards.
 - [ ] **Snyk blocks.** Run `dev` / `apply` on `gate-demo`. It should fail at `Dependency Scan` on
       Spring Boot 2.7.18, with Build, Push, and Deploy not run. Save `gate-snyk-blocked.png` (stage view) and `gate-snyk-blocked-log.png`.
 - [ ] **Trivy blocks.** On the Jenkins host, with `gate-demo` checked out, from the repo root:

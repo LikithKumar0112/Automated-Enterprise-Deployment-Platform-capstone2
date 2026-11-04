@@ -1,4 +1,4 @@
-commit: 43d9882 Merge Spring Boot upgrade into submission-fixes
+commit: d66c585 Merge Spring Boot upgrade into submission-fixes
 ✅ Staged. product-docker/ now has target/, dist/, application-prod.yml, nginx.conf, mime.types
    Run ./build-scripts/build-all.sh <tag> next.
 stage exit=0

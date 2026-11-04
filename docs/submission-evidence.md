@@ -12,7 +12,7 @@ The review was based on a 20-entry ZIP, which did not contain the implementation
 |---|---|---|
 | **Date** | 2026-09-17 to 2026-09-18 | 2026-11-04 |
 | **Where** | AWS account in `us-east-1`, Jenkins on a GCP VM | A clean clone on a single machine, with no AWS |
-| **Code tested** | The implementation before the review changes | The changed code (commits `db24ded` and `43d9882`) |
+| **Code tested** | The implementation before the review changes | The changed code (commits `7801b0e` and `d66c585`) |
 | **Form** | Screenshots (section 3) | Command output (section 4) |
 
 **The changed code has not been run on AWS.** AWS and Jenkins resources were not available for a re-run. Source A shows that the platform was deployed and worked on real infrastructure, but it does not show the fixes. Source B shows the fixes, but not on real infrastructure. Section 5 lists what neither source demonstrates.
@@ -158,7 +158,7 @@ These dashboards were reached on a public IP over HTTP, with Elasticsearch secur
 
 ## 4. Source B: local verification, 4 November 2026
 
-These checks ran on clean clones, without AWS, using the tools and scripts in the repository. Commit `db24ded` is the changed code on Spring Boot 2.7.18, and `43d9882` adds the upgrade to Spring Boot 4.1.2 and Java 17, which changes only the API dependency versions and base image. Sections 4.3 and 4.4 ran on both; the others ran on `db24ded`. The output below is trimmed; full output is in [`docs/evidence/local-2026-11-04/`](evidence/local-2026-11-04/).
+These checks ran on clean clones, without AWS, using the tools and scripts in the repository. Commit `7801b0e` is the changed code on Spring Boot 2.7.18, and `d66c585` adds the upgrade to Spring Boot 4.1.2 and Java 17, which changes only the API dependency versions and base image. Sections 4.3 and 4.4 ran on both; the others ran on `7801b0e`. These commit IDs and the ones in the logs were updated after a later edit to commit messages; the code at each commit is unchanged. The output below is trimmed; full output is in [`docs/evidence/local-2026-11-04/`](evidence/local-2026-11-04/).
 
 ### 4.1 Terraform validates
 
@@ -187,7 +187,7 @@ exit=1
 
 ### 4.3 Images build and run as non-root
 
-All three images built from the clean clone at `43d9882`. The API and web containers started and passed `scripts/health-check.sh`. The Prometheus metric used by the Grafana dashboard is still present after the upgrade:
+All three images built from the clean clone at `d66c585`. The API and web containers started and passed `scripts/health-check.sh`. The Prometheus metric used by the Grafana dashboard is still present after the upgrade:
 
 ```text
 $ docker exec ev-api id
@@ -215,10 +215,10 @@ exit=0
 
 | Image | Result | Exit code |
 |---|---|---|
-| `analytics-api` on Spring Boot 2.7.18 (`db24ded`) | 49 findings: 40 HIGH, 9 CRITICAL | **1 (blocked)** |
-| `analytics-api` on Spring Boot 4.1.2 and Java 17 (`43d9882`) | 0 | 0 |
-| `analytics-web` (`43d9882`) | 0 | 0 |
-| `analytics-data-processor` (`43d9882`) | 0 | 0 |
+| `analytics-api` on Spring Boot 2.7.18 (`7801b0e`) | 49 findings: 40 HIGH, 9 CRITICAL | **1 (blocked)** |
+| `analytics-api` on Spring Boot 4.1.2 and Java 17 (`d66c585`) | 0 | 0 |
+| `analytics-web` (`d66c585`) | 0 | 0 |
+| `analytics-data-processor` (`d66c585`) | 0 | 0 |
 
 The first row shows the gate stopping the vulnerable version, and the second shows the fix passing. The upgrade is a major version jump. The API starts and responds as shown in 4.3, but it has not run on EKS, and `app/` has no automated tests.
 
@@ -306,10 +306,10 @@ docker run --rm -v "$PWD/product-infrastructure:/iac" -w /iac hashicorp/terrafor
 docker run --rm -v "$PWD/product-infrastructure:/iac" bridgecrew/checkov:3.3.19 \
   -d /iac --framework terraform --compact --quiet --baseline /iac/.checkov.baseline
 
-# Build (use maven:3.9-eclipse-temurin-11 at db24ded)
+# Build (use maven:3.9-eclipse-temurin-11 at 7801b0e)
 docker run --rm -v "$PWD:/w" -w /w/product-docker maven:3.9-eclipse-temurin-17 ./build-scripts/stage-local-app.sh
 (cd product-docker && docker build --target api -t analytics-api:evidence .)
 
-# Trivy: expect exit 0 at 43d9882, exit 1 at db24ded
+# Trivy: expect exit 0 at d66c585, exit 1 at 7801b0e
 product-deployment-pipeline/scripts/scan-image.sh analytics-api:evidence; echo "exit=$?"
 ```
