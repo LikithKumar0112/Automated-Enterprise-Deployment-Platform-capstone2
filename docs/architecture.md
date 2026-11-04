@@ -67,16 +67,17 @@ Flat manifest set (no Helm/Kustomize at this layer, by design):
 - `configmap.yaml` / `secrets.yaml` — app config and the secrets
   *template* (see `docs/security.md` — never filled with real values here).
 
-Because there's no Kustomize overlay layer, image tags are substituted
-in place before `kubectl apply` (`sed` in `product-deployment-pipeline/scripts/deploy.sh`
-and the Jenkinsfile's `Kubernetes Deploy` stage) and reverted afterwards
-so the checked-in files always show the `analytics-api:latest` /
+Because there's no Kustomize overlay layer, image tags are rendered into a
+git-ignored `deployment.rendered.yaml` before `kubectl apply` (`sed` in
+`product-deployment-pipeline/scripts/deploy.sh` and the Jenkinsfile's
+`Kubernetes Deploy` stage), so the checked-in files always show the `analytics-api:latest` /
 `analytics-web:latest` / `analytics-data-processor:latest` placeholders.
 
 ### CI/CD — `product-deployment-pipeline/`
-`Jenkinsfile` is the pipeline entry point; `scripts/` is the manual/local
-equivalent; `shared-library/vars/*.groovy` holds logic shared between the
-two (deploy, security scan, Slack notify) so they don't drift apart. See
+`Jenkinsfile` is the pipeline entry point; `scripts/` holds `deploy.sh` (the
+manual/local equivalent) and helpers both of them call (`health-check.sh`,
+`rollback.sh`, `sync-secrets.sh`, `scan-image.sh`, `notify-slack.sh`).
+`shared-library/vars/*.groovy` exists but isn't called by the Jenkinsfile yet. See
 `docs/runbooks.md` for the full stage-by-stage walkthrough.
 
 ### Observability — `monitoring/`
@@ -94,24 +95,26 @@ two (deploy, security scan, Slack notify) so they don't drift apart. See
   single multi-stage `Dockerfile` run as a non-root user.
 - Application secrets live in AWS Secrets Manager, encrypted with a
   dedicated KMS key, never committed to Git.
-- A per-workspace `ci_deploy` IAM role is what Jenkins actually assumes —
-  scoped to that one environment's EKS cluster, ECR, secrets, and
-  Terraform state path.
-- WAFv2 (managed rule set + rate limiting) in front of the ALB.
+- `scripts/sync-secrets.sh` copies them into the `api-secrets` Kubernetes
+  Secret at deploy time.
+- A per-workspace `ci_deploy` IAM role and a WAFv2 web ACL are provisioned but
+  not in use yet (see `docs/security.md`).
 
 ## Data flow (a single deployment)
 
-1. Push to `main` → Jenkins pipeline triggers.
-2. Maven build, SAST (SonarQube), Trivy scan on the just-built images.
-3. `product-docker/Dockerfile` builds all three targets (`--target api`,
-   `--target webapp`, `--target data-processor`), pushes to ECR.
+1. A Jenkins pipeline run is started with `ENVIRONMENT` and `ACTION`.
+2. Checkov scans the Terraform and Snyk scans the Maven dependencies.
+3. Maven tests run, then `product-docker/Dockerfile` builds all three targets
+   (`--target api`, `--target webapp`, `--target data-processor`). Trivy scans
+   them, and they're pushed to ECR on `ACTION=apply`.
 4. `terraform workspace select <env>` (or `new` on first run) →
    `terraform plan`/`apply -var-file=environments/<env>/<env>.tfvars`
    against the single `product-infrastructure/main.tf` root — manual
    approval gate for `prod`.
-5. `kubectl apply` the (image-substituted) `product-kubernetes/` manifests,
-   wait for rollout, run smoke tests against the Ingress health endpoints.
-6. On `prod` failure, the pipeline runs `kubectl rollout undo` (see
+5. `sync-secrets.sh` builds `api-secrets`, then `kubectl apply` the rendered
+   `product-kubernetes/` manifests, wait for rollout, and run smoke tests
+   against the Ingress health endpoints.
+6. If the deploy or smoke tests fail, the pipeline runs `rollback.sh` (see
    `docs/incident-response.md`, `product-deployment-pipeline/scripts/rollback.sh`).
 
 ## Why this shape

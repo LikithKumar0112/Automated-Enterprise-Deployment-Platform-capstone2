@@ -13,7 +13,9 @@
 | **Project Type** | DevOps / Platform Engineering (Infrastructure-as-Code + CI/CD) |
 | **Target Users** | DevOps/Platform Engineers, SRE teams, Customer Success/Support Engineers, Security & Compliance reviewers |
 
-This repository is the deployment backbone for a self-hosted, data-intensive enterprise analytics product. It does not contain the product's application source code — it contains everything required to build, secure, provision, deploy, and observe that product consistently across multiple customer-facing environments.
+This repository is the deployment backbone for a self-hosted, data-intensive enterprise analytics product. It contains everything required to build, secure, provision, deploy, and observe that product consistently across multiple environments, plus small stub applications in `app/` so the whole flow can be run end to end.
+
+**Current status:** `dev` was fully deployed on real AWS and Jenkins; `stage` and `prod` were validated with `terraform plan` only because of an account vCPU quota. See [`EXECUTION.md`](EXECUTION.md) for the evidence and [`docs/evidence-checklist.md`](docs/evidence-checklist.md) for what still has to be re-captured.
 
 **Business value:** analytics products sold as self-hosted software are traditionally deployed by hand, environment by environment, which produces configuration drift, slow onboarding, and inconsistent security posture per customer. This platform replaces that with one Terraform codebase parameterized per environment, one CI/CD pipeline enforcing the same security gates everywhere, and one Kubernetes manifest set deployed identically regardless of target — trading manual, error-prone rollout for a repeatable, auditable process.
 
@@ -55,13 +57,13 @@ This platform addresses those problems by moving environment definition into ver
 |---|---|---|
 | Workspace-driven Terraform | One root config in `product-infrastructure/`, differentiated per environment via `terraform.workspace` and `environments/<env>/<env>.tfvars` | Eliminates drift between environment definitions; onboarding a new environment is a `.tfvars` file, not a new codebase |
 | Multi-target Docker build | Single `Dockerfile` with `api`, `webapp`, and `data-processor` build targets sharing a common JVM base | One image lineage to patch and scan instead of three divergent Dockerfiles |
-| Security-gated CI/CD | SonarQube, Trivy, and Checkov run as blocking pipeline stages before any deploy | Vulnerable code, images, or infrastructure changes cannot reach production |
+| Security-gated CI/CD | Checkov, Snyk, and Trivy run as blocking pipeline stages before any image is pushed or deployed; scans cannot be disabled for `stage`/`prod` | New infrastructure findings and HIGH/CRITICAL vulnerabilities stop the release |
 | Manual approval gate for production | Jenkins `input` step, 1-hour timeout, required only when `ENVIRONMENT=prod` and `ACTION=apply` | Enforces human sign-off on production infrastructure changes without slowing lower environments |
-| Automated rollback on failure | Pipeline `post { failure { ... } }` block runs `kubectl rollout undo` for production deployments | Bounds blast radius of a bad production deploy without waiting for manual intervention |
+| Automated rollback on failure | If a deploy or its smoke tests fail in any environment, `scripts/rollback.sh` restores the previous version. Failures before the cluster changes do not trigger it | Bounds blast radius of a bad deploy without touching a healthy release |
 | Spot-capacity node groups | Tainted, dedicated `spot` node group in stage/prod alongside an on-demand `general` group | Lowers compute cost for interruption-tolerant workloads (e.g., the hourly data-processor CronJob) |
 | Dual-layer observability | CloudWatch alarms/dashboard (AWS-native) plus an in-cluster Prometheus/Grafana/Alertmanager stack and EFK logging | Infrastructure-level and application-level visibility from two independent, mutually-redundant sources |
 | KMS-encrypted secrets envelope | EKS secrets encryption via a dedicated KMS key; Secrets Manager containers with rotation-ready structure | Meets baseline enterprise expectations for encryption-at-rest of sensitive configuration |
-| WAF rate limiting | Regional `aws_wafv2_web_acl` with AWS managed rule set plus a per-environment rate limit | Baseline edge protection against common web exploits and request floods |
+| WAF rate limiting | Regional `aws_wafv2_web_acl` with AWS managed rule set plus a per-environment rate limit. Provisioned, but not yet attached to the ALBs | Ready-to-attach edge protection against common web exploits and request floods |
 
 ---
 
@@ -73,9 +75,10 @@ flowchart TB
     Repo --> Jenkins[Jenkins Pipeline]
 
     subgraph CI["CI Stage"]
-        Jenkins --> Scan[SonarQube / Trivy / Checkov]
+        Jenkins --> Scan[Checkov + Snyk]
         Scan --> Build[Maven Build + Docker Multi-Target Build]
-        Build --> ECR[(Amazon ECR)]
+        Build --> Trivy[Trivy Image Scan]
+        Trivy --> ECR[(Amazon ECR)]
     end
 
     subgraph CD["CD Stage"]
@@ -110,11 +113,11 @@ flowchart TB
     Elasticsearch --> Kibana[Kibana]
 
     K8sDeploy --> SmokeTest[Smoke Tests: /health endpoints]
-    SmokeTest -->|failure, prod only| Rollback[kubectl rollout undo]
+    SmokeTest -->|failure| Rollback[rollback.sh: kubectl rollout undo]
     Jenkins --> Slack[Slack Notifications]
 ```
 
-**Component interactions:** Jenkins is the sole orchestrator — it checks out this infrastructure repository and a separate application source repository, runs security scans, builds and pushes container images, plans/applies Terraform, and applies Kubernetes manifests in sequence. AWS resources (VPC, EKS, security baseline, monitoring) are provisioned by four independent Terraform modules composed from one root configuration.
+**Component interactions:** Jenkins is the sole orchestrator — it checks out this repository, runs security scans, builds and pushes container images, plans/applies Terraform, and applies Kubernetes manifests in sequence. AWS resources (VPC, EKS, security baseline, monitoring) are provisioned by four independent Terraform modules composed from one root configuration.
 
 **Request flow:** external traffic reaches the two ALB Ingress resources (`analytics-api`, `analytics-web`), which route to their respective ClusterIP Services and on to the `analytics-api`/`analytics-web` Deployments running in the `analytics` namespace.
 
@@ -129,19 +132,19 @@ flowchart TB
 | Technology | Purpose |
 |---|---|
 | Terraform (`>= 1.0.0`, AWS provider `~> 4.0`) | Declarative provisioning of all AWS resources across 4 composed modules |
-| Amazon EKS (Kubernetes 1.27) | Managed Kubernetes control plane and worker node groups |
+| Amazon EKS (Kubernetes 1.35) | Managed Kubernetes control plane and worker node groups |
 | Amazon VPC | Per-environment network isolation with public/private subnets and NAT gateways |
 | AWS KMS | Envelope encryption for EKS secrets and Secrets Manager containers |
 | AWS Secrets Manager | Secret container provisioning (values injected at deploy time, not by Terraform) |
-| AWS WAFv2 | Regional web ACL with managed rule set and rate-based limiting in front of the ALB |
+| AWS WAFv2 | Regional web ACL with managed rule set and rate-based limiting (not yet attached to the ALBs) |
 | Amazon S3 + DynamoDB | Terraform remote state storage and state locking |
 
 ### Application Runtime
 
 | Technology | Purpose |
 |---|---|
-| OpenJDK 11 (`openjdk:11-jre-slim`) | Runtime base image for the `api` and `data-processor` services |
-| Nginx 1.21 (Alpine) | Static asset serving for the `webapp` service |
+| Eclipse Temurin 11 (`eclipse-temurin:11-jre-jammy`) | Runtime base image for the `api` and `data-processor` services |
+| Nginx 1.30 (Alpine) | Static asset serving for the `webapp` service |
 | Docker multi-stage builds | Single Dockerfile, three build targets (`api`, `webapp`, `data-processor`) sharing a common base stage |
 
 ### Orchestration
@@ -149,19 +152,18 @@ flowchart TB
 | Technology | Purpose |
 |---|---|
 | Kubernetes manifests (flat YAML) | Deployments, CronJob, Services, Ingress, ConfigMaps, Secrets — no Helm/Kustomize at the application layer |
-| AWS ALB Ingress Controller | Internet-facing load balancing with TLS termination (`ELBSecurityPolicy-TLS-1-2-Ext-2018-06`) |
+| AWS Load Balancer Controller | Internet-facing ALBs. HTTP only for now: no domain or ACM certificate exists for this exercise |
 
 ### DevOps / CI-CD
 
 | Technology | Purpose |
 |---|---|
-| Jenkins (declarative pipeline, Kubernetes pod agents) | Orchestrates scan → build → plan → approve → apply → deploy → verify |
+| Jenkins (declarative pipeline, `agent any` on a single host) | Orchestrates scan → build → plan → approve → apply → deploy → verify |
 | Apache Maven 3.8 | Builds and tests the JVM-based application artifacts |
-| SonarQube | Static code analysis, blocking on quality gate failure |
-| Trivy | Container image vulnerability scanning (blocks on HIGH/CRITICAL) |
-| Checkov | Terraform static security scanning (blocks on failed checks) |
-| Semgrep | Local static analysis invoked from `deploy.sh` |
-| HashiCorp Vault | Supplies AWS credentials and kubeconfig to the Jenkins pipeline at runtime |
+| Snyk | Maven dependency scanning (blocks on HIGH/CRITICAL) |
+| Trivy | Container image scanning for all three images (blocks on fixable HIGH/CRITICAL) |
+| Checkov | Terraform static security scanning (blocks on findings not in the reviewed baseline) |
+| Semgrep | Local static analysis invoked from `deploy.sh` (blocks on findings) |
 
 ### Monitoring & Logging
 
@@ -180,15 +182,19 @@ flowchart TB
 ## 7. Folder Structure
 
 ```text
-enterprise-product-deployment/
+Automated-Enterprise-Deployment-Platform-capstone2/
+├── app/                             Stub API, data processor and web app used to exercise the platform
+├── EXECUTION.md                     Record of what was actually run, with screenshots
 ├── product-deployment-pipeline/
 │   ├── Jenkinsfile                  Declarative pipeline: scan → build → plan → approve → apply → deploy → verify
 │   ├── scripts/
 │   │   ├── deploy.sh                 Manual/local equivalent of the Jenkins pipeline
 │   │   ├── health-check.sh           Standalone HTTP polling utility
 │   │   ├── rollback.sh               kubectl rollout undo for analytics-api / analytics-web
+│   │   ├── sync-secrets.sh           Builds the api-secrets Secret from AWS Secrets Manager
+│   │   ├── scan-image.sh             Trivy scan that fails on fixable HIGH/CRITICAL
 │   │   └── notify-slack.sh           Slack webhook notification wrapper
-│   └── shared-library/vars/          Reusable Jenkins pipeline steps (deployToKubernetes, notifySlack, runSecurityScan)
+│   └── shared-library/vars/          Reusable Jenkins steps (not called by the Jenkinsfile yet)
 ├── product-infrastructure/
 │   ├── main.tf / variables.tf / outputs.tf / backend.tf   Root Terraform configuration
 │   ├── modules/
@@ -205,7 +211,7 @@ enterprise-product-deployment/
 │   ├── service.yaml                  ClusterIP services for api/web
 │   ├── ingress.yaml                  ALB Ingress resources
 │   ├── configmap.yaml                api-config, web-config
-│   └── secrets.yaml                  Structural secret template (values injected at deploy time)
+│   └── secrets.yaml                  Reference for the api-secrets keys (not applied)
 ├── product-docker/
 │   ├── Dockerfile                    Multi-stage, multi-target build (api / webapp / data-processor)
 │   └── build-scripts/                Per-target and build-all wrapper scripts
@@ -217,7 +223,10 @@ enterprise-product-deployment/
 │   ├── runbooks.md
 │   ├── incident-response.md
 │   ├── security.md
-│   └── cost-optimization.md
+│   ├── cost-optimization.md
+│   ├── evidence-checklist.md
+│   ├── feedback/                     Reviewer feedback this version responds to
+│   └── screenshots/
 └── README.md
 ```
 
@@ -225,16 +234,16 @@ enterprise-product-deployment/
 
 ## 8. Security Implementation
 
-- **Secrets management:** Kubernetes `Secret` objects are provisioned as structural templates only — actual values (`DB_USERNAME`, `DB_PASSWORD`, `DB_URL`, `JWT_SIGNING_KEY`) are injected at deploy time by Vault Agent Injector or an External Secrets Operator, and are never committed to the repository. AWS Secrets Manager containers are created by Terraform but their values are likewise set outside of Terraform.
+- **Secrets management:** AWS Secrets Manager is the single source of secrets. Terraform creates the containers, their values are set outside Terraform, and `scripts/sync-secrets.sh` builds the `api-secrets` Kubernetes Secret (`DB_USERNAME`, `DB_PASSWORD`, `DB_URL`, `JWT_SIGNING_KEY`) at deploy time, failing the deploy if a value is missing. Nothing is committed to the repository.
 - **Encryption at rest:** EKS secrets envelope encryption uses a dedicated, rotation-enabled KMS key (30-day deletion window); Secrets Manager has its own equivalent KMS key.
-- **Least privilege CI access:** the Jenkins pipeline assumes a dedicated `ci_deploy` IAM role via `sts:AssumeRole` with an external ID condition, scoped to EKS describe/list, ECR push/pull, Secrets Manager read, and Terraform state/lock access — no broad account-level credentials are used in CI.
-- **Edge protection:** a regional AWS WAFv2 web ACL sits in front of the ALB with the AWS Managed Common Rule Set plus an environment-specific rate-based rule (2,000–5,000 requests, tightest in `prod`).
+- **CI access:** Terraform provisions a scoped `ci_deploy` IAM role, but the pipeline does not assume it yet: it uses the AWS credentials of the `jenkins` system user on the Jenkins host. Moving to the role is a known gap (see `docs/security.md`).
+- **Edge protection:** a regional AWS WAFv2 web ACL is provisioned with the AWS Managed Common Rule Set plus an environment-specific rate-based rule (2,000–5,000 requests, tightest in `prod`). It is not attached to the ALBs yet.
 - **Container hardening:** all application containers run as a non-root user (UID/GID 1001), consistent across the Dockerfile and Kubernetes `securityContext`.
 - **Network isolation:** EKS API access is private by default (`endpoint_private_access = true` in every environment); `dev` additionally allows public access from `0.0.0.0/0` for developer convenience, while `stage` and `prod` disable public access entirely.
 - **Audit logging:** all five EKS control-plane log types (`api`, `audit`, `authenticator`, `controllerManager`, `scheduler`) are enabled and shipped to CloudWatch Logs.
-- **Pipeline security gates:** SonarQube (blocks on quality gate failure), Trivy (blocks on HIGH/CRITICAL image vulnerabilities), and Checkov (blocks on failed Terraform security checks) all run before any infrastructure or application change is applied.
+- **Pipeline security gates:** Checkov (blocks on Terraform findings not in the reviewed baseline), Snyk (blocks on HIGH/CRITICAL dependencies), and Trivy (blocks on fixable HIGH/CRITICAL image vulnerabilities) all run before any image is pushed or any infrastructure or application change is applied. See `docs/security.md` for exact failure conditions.
 
-**Documented gaps** (tracked in `docs/security.md`, not yet implemented): default-deny Kubernetes `NetworkPolicy`, automated Secrets Manager rotation, and image signing/admission control (Cosign + Kyverno).
+**Documented gaps** (tracked in `docs/security.md`, not yet implemented): HTTPS, WAF attachment, CI role adoption, default-deny Kubernetes `NetworkPolicy`, automated Secrets Manager rotation, and image signing/admission control (Cosign + Kyverno).
 
 ---
 
@@ -242,31 +251,34 @@ enterprise-product-deployment/
 
 ```mermaid
 flowchart LR
-    A[Initialize\nVault creds + repo checkout] --> B[Security Scan\nSonarQube / Trivy / Checkov]
-    B --> C[Build & Test\nMaven + Docker multi-target build]
-    C --> D[Push Images to ECR]
+    A[Initialize\nAWS identity + scan guard] --> B[IaC Scan\nCheckov]
+    B --> B2[Dependency Scan\nSnyk]
+    B2 --> C[Build & Test\nMaven + Docker multi-target build]
+    C --> C2[Image Scan\nTrivy]
+    C2 --> D[Push Images to ECR\napply only]
     D --> E[Terraform Plan]
     E --> F{Manual Approval\nprod + apply only}
     F --> G[Terraform Apply]
     G --> H[Kubernetes Deploy\nconfigmap/secrets/deployment/service/ingress]
     H --> I[Smoke Tests\n/health endpoints]
     I --> J[Monitoring Setup\nEFK + Grafana dashboards]
-    I -->|failure, prod only| K[Automated Rollback\nkubectl rollout undo]
+    H -->|failure| K[Automated Rollback\nrollback.sh]
+    I -->|failure| K
     J --> L[Slack Notification]
     K --> L
 ```
 
 **Pipeline characteristics:**
-- Runs on ephemeral Jenkins Kubernetes pod agents with dedicated containers for `terraform`, `kubectl`, `docker` (DinD), and `maven`.
-- Parameterized by `ENVIRONMENT` (dev/stage/prod), `ACTION` (plan/apply/destroy), `RUN_TESTS`, `SECURITY_SCAN`, and `IMAGE_TAG`.
-- Build discarder retains the last 10 builds; overall pipeline timeout is 2 hours; transient failures retry up to 3 times; concurrent builds are disabled to prevent overlapping Terraform state operations.
+- Runs on a single Jenkins host (`agent any`) with `terraform`, `kubectl`, `helm`, `docker`, `maven`, `jq`, `aws`, and `snyk` installed.
+- Parameterized by `ENVIRONMENT` (dev/stage/prod), `ACTION` (plan/apply), `RUN_TESTS`, `SECURITY_SCAN`, and `IMAGE_TAG`. `ACTION=plan` scans, builds, and plans only: it pushes nothing and does not touch any cluster.
+- Build discarder retains the last 10 builds; overall pipeline timeout is 2 hours; concurrent builds are disabled to prevent overlapping Terraform state operations.
 - The manual approval gate is conditional — it only appears when deploying to `prod` with `ACTION=apply`, and times out after 1 hour.
 
 **Deployment strategy:** the platform performs a **Kubernetes rolling update** (`maxSurge: 1`, `maxUnavailable: 0`) for `analytics-api` and `analytics-web` — new pods are started and pass health checks before old pods are terminated, achieving zero-downtime deploys without a separate blue/green environment or traffic-shifting infrastructure.
 
-**Rollback strategy:** on pipeline failure in production, the `post` block automatically runs `kubectl rollout undo` against both Deployments and waits for rollout status — this is a Kubernetes ReplicaSet rollback, not a Terraform state rollback. The same mechanism is available as a standalone operation via `scripts/rollback.sh`.
+**Rollback strategy:** if the `Kubernetes Deploy` or `Smoke Tests` stage fails, the `post` block runs `scripts/rollback.sh`, which undoes both Deployments, waits for rollout status, and prints the image before and after. This is a Kubernetes ReplicaSet rollback, not a Terraform state rollback. It does not run for failures before the cluster changes, or for a Monitoring Setup failure after the release is verified.
 
-**Automation note:** a Jenkins Shared Library (`shared-library/vars/*.groovy`) exists with reusable `deployToKubernetes`, `notifySlack`, and `runSecurityScan` steps, intended to keep pipeline logic consistent between Jenkins and the manual `deploy.sh` path.
+**Automation note:** a Jenkins Shared Library (`shared-library/vars/*.groovy`) exists with `deployToKubernetes`, `notifySlack`, and `runSecurityScan` steps, but the Jenkinsfile does not call it yet.
 
 ---
 
@@ -282,16 +294,16 @@ Each of the three environments (`dev`, `stage`, `prod`) is a separate **Terrafor
 | Availability Zones | 2 | 3 | 3 |
 | NAT Gateway topology | Single shared | Single shared | One per AZ |
 | EKS public endpoint access | Enabled (`0.0.0.0/0`) | Disabled | Disabled |
-| `general` node group | 1× t3.medium (SPOT), 1–3 nodes | 3× m5.large (ON_DEMAND), 2–5 nodes | 4× m5.xlarge (ON_DEMAND), 3–10 nodes |
-| `spot` node group | — | 2× m5.large/m5a.large (SPOT, tainted), 0–6 nodes | 3× m5.xlarge/m5a.xlarge/m5d.xlarge (SPOT, tainted), 0–15 nodes |
+| `general` node group | 2× m7i-flex.large (ON_DEMAND), 1–3 nodes | 2× m7i-flex.large (ON_DEMAND), 2–5 nodes | 3× m7i-flex.large (ON_DEMAND), 1–10 nodes |
+| `spot` node group | — | 0× m7i-flex.large (SPOT, tainted), 0–6 nodes | 0× m7i-flex.large (SPOT, tainted), 0–15 nodes |
 | WAF rate limit | 5,000 req | 3,000 req | 2,000 req |
 
 ### Cloud Architecture
 
-- **Load balancing:** AWS ALB (via Ingress Controller), internet-facing, `ip` target type, TLS 1.2+ policy.
+- **Load balancing:** AWS ALB (via the AWS Load Balancer Controller), internet-facing, `ip` target type, HTTP only for now.
 - **Compute:** EKS-managed node groups split between on-demand (`general`, for latency-sensitive `analytics-api`/`analytics-web`) and tainted spot capacity (`spot`, primarily for the hourly `analytics-data-processor` CronJob).
 - **Networking:** dedicated VPC per environment with public/private subnet separation and VPC Flow Logs shipped to CloudWatch.
-- **Security:** WAFv2 web ACL at the edge, KMS-encrypted secrets and EKS envelope encryption, least-privilege CI IAM role.
+- **Security:** KMS-encrypted secrets and EKS envelope encryption; WAFv2 web ACL and scoped CI IAM role provisioned but not yet in use.
 - **State management:** Terraform remote state in S3 (per-workspace key prefix) with DynamoDB-backed locking — both bootstrapped once per account outside of Terraform itself (see `docs/runbooks.md`).
 
 ---
@@ -308,7 +320,7 @@ The platform runs **two independent, complementary observability layers**:
 
 **Grafana dashboard** ("Analytics Platform Overview") tracks: request rate and 5xx error rate for `analytics-api`, pod restart rate by pod, and node CPU utilization.
 
-**Alerting rules** (PrometheusRule): `HighErrorRate` (5xx rate > 5% over 5 minutes, critical), `PodCrashLooping` (restart rate > 3 per 15 minutes, warning), `DeploymentStuck` (unavailable replicas for 10+ minutes, critical) — routed to environment-specific Slack channels by severity.
+**Alerting rules** (PrometheusRule): `HighErrorRate` (5xx rate > 5% over 5 minutes, critical), `PodCrashLooping` (restart rate > 3 per 15 minutes, warning), `DeploymentStuck` (unavailable replicas for 10+ minutes, critical) — routed to Slack channels by severity through Alertmanager.
 
 **Log access:** `kubectl port-forward svc/kibana 5601:5601 -n logging`
 
@@ -319,14 +331,14 @@ The platform runs **two independent, complementary observability layers**:
 ### Prerequisites
 
 - AWS account with permissions to create VPC, EKS, IAM, KMS, WAF, and CloudWatch resources
-- `aws-cli`, `kubectl`, `terraform` (>= 1.0.0), `docker`, `maven`, `jq`
+- `aws-cli`, `kubectl`, `helm`, `terraform` (>= 1.0.0), `docker`, `maven`, `jq`, and `snyk` on the Jenkins host
 - A pre-provisioned S3 bucket and DynamoDB table for Terraform remote state (bootstrap steps in `docs/runbooks.md`)
 
 ### Clone Repository
 
 ```bash
-git clone https://github.com/SkillfymeLearning/Automated-Enterprise-Deployment-Platform.git
-cd enterprise-product-deployment
+git clone https://github.com/LikithKumar0112/Automated-Enterprise-Deployment-Platform-capstone2.git
+cd Automated-Enterprise-Deployment-Platform-capstone2
 aws configure
 ```
 
@@ -346,14 +358,18 @@ terraform apply -var-file="environments/dev/dev.tfvars"
 
 ```bash
 aws eks update-kubeconfig --name analytics-dev --region <region>
-cd ../product-kubernetes
-kubectl apply -f configmap.yaml -f secrets.yaml -f deployment.yaml -f service.yaml -f ingress.yaml
+cd ..
+# Set the secret values once first: see docs/runbooks.md
+./product-deployment-pipeline/scripts/sync-secrets.sh dev
+cd product-kubernetes
+kubectl apply -f configmap.yaml -f deployment.yaml -f service.yaml -f ingress.yaml
 ```
 
 ### Docker Image Build
 
 ```bash
 cd product-docker
+./build-scripts/stage-local-app.sh   # builds the app/ stubs into the Docker context
 ./build-scripts/build-all.sh <tag>
 ```
 
@@ -366,8 +382,12 @@ cd product-docker
 ### Monitoring Setup
 
 ```bash
+# Full sequence, including the Alertmanager Slack secret: see docs/runbooks.md
 kubectl apply -k monitoring/efk/
-kubectl apply -f monitoring/dashboards/ -n monitoring
+helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+  --namespace monitoring --create-namespace \
+  -f monitoring/dashboards/kube-prometheus-stack-values.yaml
+kubectl apply -f monitoring/dashboards/analytics-api-servicemonitor.yaml
 ```
 
 ### Verification
@@ -375,8 +395,8 @@ kubectl apply -f monitoring/dashboards/ -n monitoring
 ```bash
 kubectl get pods -n analytics
 kubectl get ingress -n analytics
-curl https://<alb-hostname>/actuator/health   # analytics-api
-curl https://<alb-hostname>/health            # analytics-web
+curl -H 'Host: api.analytics.company.com' http://<api-alb-hostname>/actuator/health
+curl -H 'Host: app.analytics.company.com' http://<web-alb-hostname>/health
 ```
 
 Full manual walkthrough, including one-time state-backend bootstrap, is documented in `docs/runbooks.md`.
@@ -387,7 +407,7 @@ Full manual walkthrough, including one-time state-backend bootstrap, is document
 
 ### Technical Challenges
 - **Environment parity without duplication** — resolved by driving a single Terraform root configuration through `terraform.workspace` and per-environment `.tfvars`, rather than maintaining three parallel copies of the same infrastructure code.
-- **Image tagging without polluting version control** — the pipeline substitutes image tags into `deployment.yaml` with `sed` at deploy time and reverts the change afterward (`git checkout --`), keeping the manifest's committed state generic (`:latest`) while still deploying immutable, build-specific tags.
+- **Image tagging without polluting version control** — the pipeline renders `deployment.yaml` into a git-ignored `deployment.rendered.yaml` with `sed` at deploy time, keeping the committed manifest generic (`:latest`) while still deploying immutable, build-specific tags.
 
 ### Architecture Challenges
 - **Documentation vs. implementation gap:** earlier documentation described the deployment strategy as "blue/green." The actual, implemented strategy is a Kubernetes `RollingUpdate` (`maxSurge: 1`, `maxUnavailable: 0`) — there is no parallel environment or traffic-shifting infrastructure in either the Terraform or Kubernetes layer. This README reflects the implementation as built, not the earlier aspirational framing.
@@ -399,11 +419,11 @@ Full manual walkthrough, including one-time state-backend bootstrap, is document
 
 ### Security Challenges
 - Balancing developer convenience against exposure in `dev` (public EKS API endpoint enabled) against the stricter, fully-private posture required in `stage`/`prod`.
-- Keeping real secret values out of version control entirely required designing the Kubernetes `Secret` manifest as a structural template (placeholder values) populated only at deploy time by an external secrets mechanism.
+- Keeping real secret values out of version control entirely: the Kubernetes `Secret` is generated at deploy time from AWS Secrets Manager rather than applied from a file in Git.
 
 ### Key Learnings
 - Encoding environment differences as data (`.tfvars`) rather than code (separate modules/branches) is what actually prevents configuration drift over time.
-- A pipeline's security gates are only as strong as their enforcement — Trivy/Checkov/SonarQube are effective specifically because they block the pipeline on failure rather than merely reporting results.
+- A pipeline's security gates are only as strong as their enforcement — the first version of this pipeline ran its scanners with `|| true`, so they found 18 failed Checkov checks and Critical CVEs and still passed. They now block.
 
 ---
 

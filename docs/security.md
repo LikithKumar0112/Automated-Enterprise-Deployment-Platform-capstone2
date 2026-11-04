@@ -3,46 +3,62 @@
 ## Principles
 
 1. **No secrets in Git.** `product-kubernetes/secrets.yaml` is a
-   structural template only — real values come from AWS Secrets Manager /
-   Vault at deploy time.
-2. **Least privilege, per environment.** Jenkins assumes the
-   `ci_deploy` role from `product-infrastructure/modules/security-baseline`,
-   scoped to one workspace's EKS cluster, ECR, secrets, and Terraform state
-   path — never a long-lived, cross-environment credential.
+   reference only — real values come from AWS Secrets Manager at deploy
+   time, through `scripts/sync-secrets.sh`.
+2. **Least privilege, per environment (partly in place).** Terraform creates
+   a `ci_deploy` role in `product-infrastructure/modules/security-baseline`,
+   scoped to one workspace. The pipeline does not assume it yet; see Known gaps.
 3. **Non-root containers.** All three targets in `product-docker/Dockerfile`
    (`api`, `webapp`, `data-processor`) run as a dedicated non-root UID/GID.
-4. **Defense in depth at the edge.** WAFv2 (managed rule set + rate
-   limiting) sits in front of the ALB defined in `product-kubernetes/ingress.yaml`.
+4. **Defense in depth at the edge (partly in place).** A WAFv2 web ACL is
+   provisioned but not attached to the ALBs yet; see Known gaps.
 
 ## Pipeline security gates (capstone Task 5)
 
 | Tool | Scope | Failure behavior |
 |---|---|---|
-| SonarQube | SAST on the Maven project | Blocks build |
-| Trivy | Container image vulnerability scan (HIGH/CRITICAL) | Blocks push |
-| Checkov | Terraform static analysis | Blocks apply |
-| Semgrep (local `deploy.sh` path) | Additional SAST pass | Blocks build |
+| Tool | Stage | Fails when | Effect |
+|---|---|---|---|
+| Checkov 3.3.19 | IaC Scan | A Terraform finding is not in `product-infrastructure/.checkov.baseline` | Nothing built, pushed, or applied |
+| Snyk | Dependency Scan | A HIGH/CRITICAL dependency in `app/api` or `app/data-processor` | Nothing built, pushed, or applied |
+| Trivy 0.69.3 | Image Scan | A fixable HIGH/CRITICAL vulnerability in any of the 3 images | Nothing pushed or applied |
+| Semgrep (local `deploy.sh` only) | Before build | Any finding | Deploy stops |
 
-`SECURITY_SCAN` can be disabled per run for fast `dev` iteration, but
-should never be turned off for `stage`/`prod`.
+`SECURITY_SCAN` can be disabled for `dev` only. The pipeline and `deploy.sh`
+both refuse to run `stage` or `prod` without scans.
+
+### Checkov baseline
+
+The baseline records 22 existing findings so that new ones can block without
+every run failing. They are accepted debt, not fixed: delete an entry once it's
+fixed, and only regenerate the file after reviewing what is being added.
+
+| Check | Finding | Resource |
+|---|---|---|
+| CKV_AWS_109, 111, 356 | Broad KMS key policy | `eks-cluster` KMS policy document |
+| CKV_AWS_26 | SNS topic not encrypted | `monitoring-stack` alerts topic |
+| CKV_AWS_158, 338 | Log groups lack KMS and 1-year retention | EKS control plane and flow logs |
+| CKV_AWS_290, 355 | IAM write access / `*` resource | `ci_deploy`, flow log role |
+| CKV2_AWS_64 | KMS key policy not defined | `security-baseline` secrets key |
+| CKV2_AWS_57 | Automatic secret rotation off | `db-credentials`, `api-keys` |
+| CKV2_AWS_31, CKV_AWS_192 | WAF logging and Log4j rule missing | WAF web ACL |
+| CKV_AWS_130 | Public subnets assign public IPs | Public subnets (needed for ALBs and NAT) |
+| CKV_AWS_394 | Availability zones not pinned | VPC module |
+| CKV2_AWS_12 | Default security group not restricted | VPC |
 
 ## Secrets management (capstone Task 5)
 
 - **Storage:** AWS Secrets Manager, one container per logical secret
   (`product-infrastructure/modules/security-baseline`'s `secret_names`),
   KMS-encrypted with rotation enabled.
-- **In-cluster shape:** `product-kubernetes/secrets.yaml` documents the
-  expected keys (`api-secrets` → `DB_USERNAME`, `DB_PASSWORD`, `DB_URL`,
-  `JWT_SIGNING_KEY`). Populate via Vault Agent injector or an External
-  Secrets Operator `ExternalSecret` — not by hand-editing real values in.
-- **CI access:** Jenkins pulls short-lived AWS credentials from Vault in
-  the `Initialize` stage (`withVault(...)`), never a static IAM user key.
-- **Proof of dynamic secret injection** (the capstone's expected outcome
-  for this task) means capturing that a pod's env var resolved from a
-  freshly-issued Vault/Secrets Manager value, not a value baked into the
-  manifest — e.g. `kubectl exec` into the pod and show the secret came
-  from the mounted/injected source, with the Vault lease ID or Secrets
-  Manager version ID in the log.
+- **In-cluster shape:** `scripts/sync-secrets.sh` reads
+  `analytics-<env>/db-credentials` (`DB_USERNAME`, `DB_PASSWORD`, `DB_URL`) and
+  `analytics-<env>/api-keys` (`JWT_SIGNING_KEY`) and creates the `api-secrets`
+  Secret. A missing value fails the deploy. `product-kubernetes/secrets.yaml`
+  is a reference for the keys and is not applied.
+- **CI access:** the pipeline uses the AWS credentials of the `jenkins` system
+  user on the Jenkins host; see Known gaps. Jenkins credentials hold
+  `snyk-api-token` and `slack-webhook-url`.
 
 ## Network security
 
@@ -61,11 +77,15 @@ should never be turned off for `stage`/`prod`.
 - The S3 Terraform state bucket has versioning enabled (see
   `docs/runbooks.md` bootstrap steps).
 
-## Known gaps (intentionally left for you to close as a learning exercise)
+## Known gaps
 
+- HTTP only: no domain or ACM certificate exists for this exercise.
+- WAF web ACL is not attached to the ALBs.
+- The pipeline does not assume the `ci_deploy` role, so the Jenkins host holds
+  AWS credentials directly.
+- Elasticsearch security is disabled and Kibana has no login, and Grafana uses
+  the chart's default admin password. Reach these through `kubectl port-forward`
+  on localhost only, never on a public IP.
 - No default-deny `NetworkPolicy` resources in `product-kubernetes/`.
 - No automated Secrets Manager rotation Lambda wired up.
 - No image-signing/admission-control (e.g. Cosign + Kyverno).
-- `sonar.company.com`, `vault.company.com`, `monitoring.company.com` in
-  the Jenkinsfile are illustrative hostnames — point them at your real
-  infrastructure before running this for real.

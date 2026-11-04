@@ -2,9 +2,9 @@
 
 ## Prerequisites
 
-`aws-cli` v2, `kubectl` >= 1.24, `terraform` >= 1.0, `docker`, `maven`, `jq`.
-AWS credentials with access to the target environment (Vault-issued
-short-lived credentials in CI, or `aws configure` locally).
+`aws-cli` v2, `kubectl` >= 1.24, `helm`, `terraform` >= 1.0, `docker`, `maven`, `jq`,
+and `snyk` on the Jenkins host. AWS credentials with access to the target
+environment (the `jenkins` system user's in CI, or `aws configure` locally).
 
 ## One-time bootstrap (per AWS account)
 
@@ -21,11 +21,39 @@ aws dynamodb create-table --table-name analytics-tf-lock \
     --billing-mode PAY_PER_REQUEST
 ```
 
+## One-time setup (ECR)
+
+Terraform doesn't create the image repositories, and images are pushed before
+`terraform apply`. Create them once per account:
+
+```bash
+for repo in analytics-api analytics-web analytics-data-processor; do
+    aws ecr create-repository --repository-name "$repo" --image-scanning-configuration scanOnPush=true
+done
+```
+
+## One-time setup (per environment)
+
+Run after the first `terraform apply` creates the secret containers. Deploys
+fail until these values exist:
+
+```bash
+aws secretsmanager put-secret-value --secret-id analytics-dev/db-credentials \
+    --secret-string '{"DB_USERNAME":"<user>","DB_PASSWORD":"<password>","DB_URL":"<jdbc-url>"}'
+aws secretsmanager put-secret-value --secret-id analytics-dev/api-keys \
+    --secret-string '{"JWT_SIGNING_KEY":"<key>"}'
+```
+
+## One-time setup (Jenkins)
+
+Add two **Secret text** credentials: `snyk-api-token` and `slack-webhook-url`.
+Point the job's Script Path at `product-deployment-pipeline/Jenkinsfile`.
+
 ## Manual deployment (local machine)
 
 ```bash
-git clone https://github.com/SkillfymeLearning/Enterprise-Deployment-Platform.git
-cd enterprise-product-deployment
+git clone https://github.com/LikithKumar0112/Automated-Enterprise-Deployment-Platform-capstone2.git
+cd Automated-Enterprise-Deployment-Platform-capstone2
 
 ./product-deployment-pipeline/scripts/deploy.sh dev apply
 ```
@@ -44,43 +72,48 @@ terraform apply -var-file="environments/dev/dev.tfvars" -var="image_tag=<tag>"
 
 aws eks update-kubeconfig --name analytics-dev --region us-east-1
 
-cd ../product-kubernetes
+cd ..
 kubectl create namespace analytics --dry-run=client -o yaml | kubectl apply -f -
-# Substitute the placeholder image names before applying:
-sed -i "s#analytics-api:latest#<ecr-registry>/analytics-api:<tag>#g" deployment.yaml
-sed -i "s#analytics-web:latest#<ecr-registry>/analytics-web:<tag>#g" deployment.yaml
-kubectl apply -f configmap.yaml -f secrets.yaml -f deployment.yaml -f service.yaml -f ingress.yaml
-kubectl wait --for=condition=available --timeout=300s deployment/analytics-api -n analytics
-kubectl wait --for=condition=available --timeout=300s deployment/analytics-web -n analytics
-git checkout -- deployment.yaml   # restore the placeholder so the diff stays clean
+./product-deployment-pipeline/scripts/sync-secrets.sh dev
+
+cd product-kubernetes
+# Render the real image names into a git-ignored copy:
+sed -e "s#analytics-api:latest#<ecr-registry>/analytics-api:<tag>#g" \
+    -e "s#analytics-web:latest#<ecr-registry>/analytics-web:<tag>#g" \
+    -e "s#analytics-data-processor:latest#<ecr-registry>/analytics-data-processor:<tag>#g" \
+    deployment.yaml > deployment.rendered.yaml
+kubectl apply -f configmap.yaml -f deployment.rendered.yaml -f service.yaml -f ingress.yaml
+kubectl rollout status deployment/analytics-api -n analytics --timeout=300s
+kubectl rollout status deployment/analytics-web -n analytics --timeout=300s
 ```
 
 `product-deployment-pipeline/scripts/deploy.sh <environment> <action> [image_tag] [run_tests] [security_scan]`
-wraps all of the above — same entry point Jenkins uses for a manual/
-break-glass deploy.
+wraps all of the above for a manual/break-glass deploy. `stage` and `prod`
+applies ask you to type the environment name to confirm.
 
 ## CI deployment (Jenkins)
 
 1. Trigger the pipeline with `ENVIRONMENT` = `dev` / `stage` / `prod`.
-2. Stages run in order: `Initialize` → `Security Scan` → `Build & Test` →
-   `Infrastructure Plan` → **Manual Approval (prod only)** →
+2. Stages run in order: `Initialize` → `IaC Scan (Checkov)` →
+   `Dependency Scan (Snyk)` → `Build & Test` → `Image Scan (Trivy)` →
+   `Push Images` → `Infrastructure Plan` → **Manual Approval (prod only)** →
    `Infrastructure Apply` → `Kubernetes Deploy` → `Smoke Tests` →
-   `Monitoring Setup`.
+   `Monitoring Setup`. With `ACTION=plan`, everything after the plan is
+   skipped, and so is `Push Images`.
 3. Review the archived `tfplan.json` before approving a `prod` apply.
-4. Success/failure post to `#deployments` / `#deployments-alerts` in Slack;
-   `prod` failures auto-rollback (see `docs/incident-response.md`).
+4. Results post to the Slack webhook in `slack-webhook-url`. A failed deploy or
+   smoke test rolls back automatically (see `docs/incident-response.md`).
 
 ## Promoting a build between environments
 
 The same image tag should move `dev → stage → prod` unchanged:
 
 ```bash
-./product-deployment-pipeline/scripts/deploy.sh stage apply <tag-that-passed-dev> false false
-./product-deployment-pipeline/scripts/deploy.sh prod  apply <tag-that-passed-stage> false false
+./product-deployment-pipeline/scripts/deploy.sh stage apply <tag-that-passed-dev> false true
+./product-deployment-pipeline/scripts/deploy.sh prod  apply <tag-that-passed-stage> false true
 ```
 
-`run_tests`/`security_scan` are `false` here because they already gated
-the `dev` deploy of this exact artifact.
+`security_scan` stays `true` because scans can only be disabled for `dev`.
 
 ## Rolling back
 
@@ -88,28 +121,20 @@ the `dev` deploy of this exact artifact.
 ./product-deployment-pipeline/scripts/rollback.sh <environment>
 ```
 
+It prints the image before and after, so the restored version is visible in
+the output.
+
 ## Destroying an environment
 
 ```bash
 ./product-deployment-pipeline/scripts/deploy.sh dev destroy
 ```
 
-There is no confirmation prompt beyond `terraform destroy -auto-approve` —
-never run this against `prod` outside a planned decommission.
+You must type the environment name to confirm. Destroy isn't offered in Jenkins.
+Delete the Ingresses and PVCs first, or the controller-created ALBs and EBS
+volumes will block the VPC destroy (see `EXECUTION.md` §6).
 
-## Proof-of-execution checklist (what the capstone brief asks you to submit per task)
+## Proof of execution
 
-This repo gives you working code to run — the actual "expected outcomes"
-listed in the capstone brief (pipeline logs, `terraform apply` output,
-`kubectl get pods`, dashboard screenshots, etc.) only exist once you run
-these commands against a real AWS account/Jenkins instance. Nothing here
-fabricates those artifacts for you:
-
-- [ ] Jenkins pipeline run, green, with webhook trigger screenshot
-- [ ] `terraform plan` / `terraform apply` output for each workspace
-- [ ] EKS cluster visible in the AWS console
-- [ ] `kubectl get pods -n analytics` output showing all three workloads healthy
-- [ ] Application reachable at the Ingress-assigned endpoint
-- [ ] Trivy/Checkov/SonarQube scan reports attached
-- [ ] Kibana log ingestion + Grafana dashboard screenshots
-- [ ] Rollback demonstration log (`rollback.sh` output, before/after `kubectl get rs`)
+See `EXECUTION.md` for what has been run and `docs/evidence-checklist.md` for
+what still has to be captured.

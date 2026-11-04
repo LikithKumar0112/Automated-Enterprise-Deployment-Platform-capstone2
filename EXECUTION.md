@@ -1,6 +1,8 @@
 # Project Execution Report
 
 > This document is the **proof-of-execution record** for this capstone — what was actually built, run, broken, fixed, and verified against a real AWS account and a real Jenkins instance. It complements `README.md` (which describes the platform's design) with evidence that the design was actually stood up and worked.
+>
+> **The evidence below was captured on 2026-09-17/18, before the changes made in response to the review feedback** ([`docs/feedback/project-feedback.pdf`](docs/feedback/project-feedback.pdf)). In those runs the scanners could not block a build, and `ACTION=plan` builds still ran Smoke Tests and Monitoring Setup. Both have been fixed, but the fixed pipeline has **not** yet been re-run on real infrastructure: [`docs/evidence-checklist.md`](docs/evidence-checklist.md) lists what must be re-captured.
 
 - **Executed by:** Likith Kumar
 - **Date:** 2026-09-17 – 2026-09-18
@@ -21,7 +23,7 @@ Every layer of the platform described in `README.md` was provisioned and exercis
 | Application | 3 Docker images (`analytics-api`, `analytics-web`, `analytics-data-processor`) built multi-target from one Dockerfile, pushed to ECR |
 | Orchestration | Kubernetes Deployments, Services, Ingress (ALB), CronJob, ConfigMaps/Secrets |
 | CI/CD | Jenkins Declarative Pipeline — 9 stages, real triggered builds, not a dry run |
-| Security scanning | Checkov (IaC), Trivy (container images), Snyk (dependency/IaC/container SCA) |
+| Security scanning | Checkov (IaC), Trivy (container images), Snyk (dependencies). Reported only in these runs: all three were set not to fail the build |
 | Observability | Prometheus + Grafana (kube-prometheus-stack) and EFK (Elasticsearch/Fluentd/Kibana), both with real scraped/ingested data |
 | Resilience | A real `kubectl rollout undo` rollback, executed and verified, not just scripted |
 
@@ -73,9 +75,10 @@ Adapted from the reference design (Kubernetes pod agents + Vault + SonarQube + a
 **Initialize → Security Scan (Checkov) → Build & Test (Maven, Docker, Trivy) → Snyk Scan → Infrastructure Plan → Manual Approval (prod+apply only) → Infrastructure Apply → Kubernetes Deploy → Smoke Tests → Monitoring Setup**
 
 Real, verified findings from the pipeline (build history), not placeholders:
-- **Checkov:** 78 passed / 18 failed IaC checks against `product-infrastructure/` (screenshot below)
-- **Trivy:** 0 OS-package CVEs, 46 jar-level CVEs in the built `analytics-api` image (visible in the Jenkins console log)
-- **Snyk:** per-project breakdown across Docker images, Kubernetes manifests, and Terraform modules (screenshot below) — e.g. `docker/api/Dockerfile`: 11 Critical / 40 High / 34 Medium / 145 Low
+- **Checkov:** 78 passed / 18 failed IaC checks against `product-infrastructure/` (screenshot below); the stage still passed
+- **Trivy:** 0 OS-package CVEs, 46 jar-level CVEs in the built `analytics-api` image (console log, no screenshot); the stage still passed
+- **Snyk (pipeline, build #13):** Critical vulnerabilities in `app/api` through Spring Boot 2.7.18; `app/data-processor` clean; the step still passed (screenshot below)
+- **Snyk (web UI):** this report scanned the earlier sample files on `main` (e.g. `docker/api/Dockerfile`: 11 Critical / 40 High / 34 Medium / 145 Low), not the code that was deployed. It needs re-importing
 
 ---
 
@@ -83,7 +86,9 @@ Real, verified findings from the pipeline (build history), not placeholders:
 
 Real resource constraints on this AWS account — an 8 vCPU On-Demand quota, with `dev` alone already using half of it (`m7i-flex.large` × 2) — meant running `stage` and `prod` fully applied at the same time as `dev` wasn't possible without hitting the same quota wall that blocked initial provisioning.
 
-Rather than request a quota increase or stand up (and immediately tear down) real infrastructure purely for a screenshot, `stage` and `prod` were validated through real `terraform plan` runs via the Jenkins pipeline (`ENVIRONMENT=stage`/`prod`, `ACTION=plan`) — both came back clean with no drift, confirming the workspace/tfvars configuration is correct for all three environments without provisioning cost. This tradeoff was reviewed with the mentor, who confirmed dev fully deployed + stage/prod validated via plan is sufficient for this deliverable.
+Rather than request a quota increase or stand up (and immediately tear down) real infrastructure purely for a screenshot, `stage` and `prod` were validated through real `terraform plan` runs via the Jenkins pipeline (`ENVIRONMENT=stage`/`prod`, `ACTION=plan`). This confirms the workspace/tfvars configuration plans successfully for all three environments without provisioning cost, but nothing was deployed to them. The screenshots show the pipeline only, not the plan output. This tradeoff was reviewed with the mentor, who confirmed dev fully deployed + stage/prod validated via plan is sufficient for this deliverable.
+
+Those builds printed "Deployment successful" and ran Smoke Tests and Monitoring Setup, because those stages had no `ACTION` condition. With no cluster switch in a plan run, they most likely acted on the `dev` cluster. The pipeline now skips them for plan runs and reports "Plan (nothing deployed)".
 
 ---
 
@@ -100,52 +105,53 @@ All screenshots below are real, taken directly from this execution (verified —
 ### Infrastructure
 | | |
 |---|---|
-| ![Terraform plan](docs/screenshots/tf%20plan%20in%20dev.png) | `terraform plan` — `dev`, real resource IDs |
-| ![Terraform apply](docs/screenshots/tf%20apply.png) | `terraform apply` complete — real EKS cluster/VPC output values |
+| ![Terraform plan](docs/screenshots/tf%20plan%20in%20dev.png) | `terraform plan` — `dev`, first run: 40 to add |
+| ![Terraform apply](docs/screenshots/tf%20apply.png) | A later `terraform apply` — 2 added, 16 changed, real output values |
 | ![kubectl get nodes](docs/screenshots/kubectl%20get%20nodes.png) | Node group ready, `v1.35.7-eks-cb19647` |
 
 ### Application Build
 | | |
 |---|---|
 | ![Build output](docs/screenshots/BUILD.png) | Multi-target Docker build — all 3 images |
-| ![Docker images](docs/screenshots/DOCKER%20IMAGE.png) | `docker images` — built image lineage |
+| ![Docker images](docs/screenshots/DOCKER%20IMAGE.png) | `docker images` and the staging/build scripts |
 
 ### Kubernetes & Ingress
 | | |
 |---|---|
 | ![Cluster resources](docs/screenshots/kube%20resources.png) | `kubectl get all -n analytics` — pods, deployments, replicasets, CronJob all healthy |
-| ![ALB health check](docs/screenshots/ALB%20ingress%20health%20check.png) | Real curl against the live ALB hostname — `{"status":"UP",...}` |
+| ![ALB health check](docs/screenshots/ALB%20ingress%20health%20check.png) | Real curl against the live ALB hostname, over HTTP — `{"status":"UP",...}`. One `data-processor` pod is shown Pending for 82 minutes |
 | ![Health check](docs/screenshots/health%20check.png) | App health endpoints, port-forwarded |
 
 ### CI/CD (Jenkins)
 | | |
 |---|---|
-| ![Pipeline plan](docs/screenshots/pp%20dev%20plan.png) | `dev` / `ACTION=plan` — all stages green |
+| ![Pipeline plan](docs/screenshots/pp%20dev%20plan.png) | `dev` / `ACTION=plan`, build #6 — Approval, Apply, and Deploy skipped |
 | ![Pipeline apply](docs/screenshots/pp%20dev%20apply.png) | `dev` / `ACTION=apply` — full deploy, build #8 |
 | ![Smoke tests](docs/screenshots/smoke%20test%20in%20pp.png) | Smoke Tests stage — real curl output from inside the pipeline |
-| ![Staging plan](docs/screenshots/stageing%20deployment.png) | `stage` / `ACTION=plan` — validated, no resources created |
-| ![Prod plan](docs/screenshots/prod%20deployment.png) | `prod` / `ACTION=plan` — validated, no resources created |
+| ![Stage plan](docs/screenshots/stage-plan-only-build9.png) | `stage` / `ACTION=plan`, build #9 — plan only, nothing deployed |
+| ![Prod plan](docs/screenshots/prod-plan-only-build10.png) | `prod` / `ACTION=plan`, build #10 — plan only, nothing deployed, no approval step reached |
 
 ### Security Scanning
 | | |
 |---|---|
-| ![Checkov](docs/screenshots/checkov%20scan.png) | Checkov IaC scan — 78 passed / 18 failed |
-| ![Snyk](docs/screenshots/snyk%20report.png) | Snyk SCA — per-project findings across Docker/K8s/Terraform |
+| ![Checkov](docs/screenshots/checkov%20scan.png) | Checkov IaC scan — 78 passed / 18 failed, build not blocked |
+| ![Snyk scan](docs/screenshots/snyk%20scan.png) | `snyk test` in Jenkins, build #13 — Critical findings in `app/api`, build not blocked |
+| ![Snyk report](docs/screenshots/snyk-report-old-sample-files.png) | Snyk web UI — scanned the old sample files, **not** the deployed code |
 
 ### Monitoring & Logging
 | | |
 |---|---|
-| ![Grafana dashboard](docs/screenshots/grafana%20app%20logs.png) | Grafana — Analytics Platform Overview, live data (post-fix) |
-| ![Grafana Kubernetes](docs/screenshots/grafana%20kubectl.png) | Grafana — Kubernetes API Server SLO dashboard |
+| ![Grafana dashboard](docs/screenshots/grafana-app-metrics.png) | Grafana — Analytics Platform Overview, live data (post-fix) |
+| ![Grafana Kubernetes](docs/screenshots/grafana-apiserver-dashboard.png) | Grafana — Kubernetes API Server SLO dashboard |
 | ![Prometheus targets](docs/screenshots/pro%20targets.png) | Prometheus targets — `analytics-api` ServiceMonitor, 3/3 UP |
-| ![Kibana Discover](docs/screenshots/kibana%20dashboard.png) | Kibana Discover — real log ingestion, 532 hits |
+| ![Kibana Discover](docs/screenshots/kibana-discover.png) | Kibana Discover — real log ingestion, 532 hits |
 | ![Kibana Dev Tools](docs/screenshots/kibana%20dev%20tools.png) | Elasticsearch cluster health — green, 3 nodes |
-| ![Index growth](docs/screenshots/index%20growth%20kibana.png) | Fluentd index — real document counts |
+| ![Fluentd index](docs/screenshots/fluentd-index-doc-count.png) | Fluentd index — document count at one point in time |
 
 ### Resilience
 | | |
 |---|---|
-| ![Rollback](docs/screenshots/rollback.png) | `rollback.sh` executed against `dev` — real `kubectl rollout undo`, verified rollout status |
+| ![Rollback](docs/screenshots/rollback.png) | `rollback.sh` executed by hand against a healthy `dev` deploy — real `kubectl rollout undo`, rollout status verified; image versions not shown |
 
 ---
 
@@ -154,6 +160,9 @@ All screenshots below are real, taken directly from this execution (verified —
 Tracked honestly rather than hidden — follow-on work, not oversights:
 
 - HTTPS/ACM certificate (currently HTTP-only — no domain registered for this exercise)
+- WAF web ACL provisioned but not attached to the ALBs; the pipeline does not assume the `ci_deploy` role
+- Elasticsearch security disabled and Grafana on its default password; these screenshots reached them on a public IP over HTTP (see `docs/security.md`)
+- `app/` has no automated tests yet, so the pipeline's test step currently verifies compilation only
 - Default-deny `NetworkPolicy` for the `analytics` namespace
 - Automated Secrets Manager rotation
 - Image signing / admission control (Cosign + Kyverno)
@@ -169,7 +178,7 @@ app/                          # Application source (api, webapp, data-processor)
 product-infrastructure/       # Terraform — VPC, EKS, IAM, monitoring-stack module
 product-docker/               # Multi-stage Dockerfile + build/staging scripts
 product-kubernetes/           # Deployment, Service, Ingress, ConfigMap, Secrets manifests
-product-deployment-pipeline/  # Jenkinsfile, rollback.sh, shared-library
+product-deployment-pipeline/  # Jenkinsfile, deploy/rollback/secrets scripts, shared-library
 monitoring/                   # kube-prometheus-stack values, Grafana dashboards, EFK manifests
 docs/                         # architecture, security, runbooks, incident-response, screenshots
 ```
