@@ -1,13 +1,10 @@
-// Posts to Slack via scripts/notify-slack.sh. A missing credential or Slack
-// outage must never change the build result, so failures are only logged.
-def sendSlack(String status, String message) {
+def notifySlack(String status, String message) {
     try {
         withCredentials([string(credentialsId: 'slack-webhook-url', variable: 'SLACK_WEBHOOK_URL')]) {
-            withEnv(["NOTIFY_STATUS=${status}", "NOTIFY_MESSAGE=${message}"]) {
-                sh 'product-deployment-pipeline/scripts/notify-slack.sh "$NOTIFY_STATUS" "$NOTIFY_MESSAGE"'
-            }
+            sh "${env.SCRIPTS}/notify-slack.sh '${status}' '${message}'"
         }
     } catch (err) {
+        // A Slack problem should not change the build result
         echo "Slack notification skipped: ${err.getMessage()}"
     }
 }
@@ -24,17 +21,15 @@ pipeline {
     environment {
         AWS_REGION      = 'us-east-1'
         ECR_REGISTRY    = '897545289989.dkr.ecr.us-east-1.amazonaws.com'
-        CLUSTER_NAME    = "analytics-${params.ENVIRONMENT}"
         TF_STATE_BUCKET = 'analytics-tf-state-897545289989'
-        CHECKOV_IMAGE   = 'bridgecrew/checkov:3.3.19'
-        TRIVY_IMAGE     = 'aquasec/trivy:0.69.3'
+        SCRIPTS         = 'product-deployment-pipeline/scripts'
     }
 
     parameters {
-        choice(name: 'ENVIRONMENT', choices: ['dev', 'stage', 'prod'], description: 'Target deployment environment / Terraform workspace')
-        choice(name: 'ACTION', choices: ['plan', 'apply'], description: 'plan changes nothing outside Jenkins; apply provisions and deploys. To destroy, follow docs/runbooks.md')
+        choice(name: 'ENVIRONMENT', choices: ['dev', 'stage', 'prod'], description: 'Environment to deploy to')
+        choice(name: 'ACTION', choices: ['plan', 'apply'], description: 'plan only shows changes, apply deploys')
         booleanParam(name: 'RUN_TESTS', defaultValue: true, description: 'Run automated tests')
-        booleanParam(name: 'SECURITY_SCAN', defaultValue: true, description: 'Run security scans. Can only be disabled for dev')
+        booleanParam(name: 'SECURITY_SCAN', defaultValue: true, description: 'Can only be turned off for dev')
         string(name: 'IMAGE_TAG', defaultValue: '${BUILD_ID}', description: 'Docker image tag')
     }
 
@@ -43,38 +38,26 @@ pipeline {
             steps {
                 script {
                     if (params.ENVIRONMENT != 'dev' && !params.SECURITY_SCAN) {
-                        error("SECURITY_SCAN cannot be disabled for ${params.ENVIRONMENT}")
+                        error("SECURITY_SCAN cannot be turned off for ${params.ENVIRONMENT}")
                     }
-                    env.ROLLBACK_ARMED = 'false'
-                    env.JENKINS_ROLE_ARN = sh(script: 'aws sts get-caller-identity --query Arn --output text', returnStdout: true).trim()
-                    sh 'aws sts get-caller-identity'
                 }
+                sh 'aws sts get-caller-identity'
             }
         }
 
-        // Fails on any finding not recorded in product-infrastructure/.checkov.baseline
         stage('IaC Scan (Checkov)') {
             when { expression { params.SECURITY_SCAN } }
             steps {
-                sh '''
-                docker run --rm -v "${WORKSPACE}/product-infrastructure:/iac" ${CHECKOV_IMAGE} \
-                    -d /iac --framework terraform --compact --quiet --baseline /iac/.checkov.baseline
-                '''
+                sh '$SCRIPTS/scan-iac.sh'
             }
         }
 
-        // Fails on HIGH/CRITICAL dependencies. Both projects are always tested
-        // so one report isn't hidden by the other project's failure.
         stage('Dependency Scan (Snyk)') {
             when { expression { params.SECURITY_SCAN } }
             steps {
                 withCredentials([string(credentialsId: 'snyk-api-token', variable: 'SNYK_TOKEN')]) {
-                    sh '''
-                    rc=0
-                    snyk test --file=app/api/pom.xml --severity-threshold=high || rc=1
-                    snyk test --file=app/data-processor/pom.xml --severity-threshold=high || rc=1
-                    exit $rc
-                    '''
+                    sh 'snyk test --file=app/api/pom.xml --severity-threshold=high'
+                    sh 'snyk test --file=app/data-processor/pom.xml --severity-threshold=high'
                 }
             }
         }
@@ -83,66 +66,34 @@ pipeline {
             steps {
                 script {
                     if (params.RUN_TESTS) {
-                        sh '''
-                        (cd app/api && mvn -q test)
-                        (cd app/data-processor && mvn -q test)
-                        '''
+                        sh 'cd app/api && mvn -q test'
+                        sh 'cd app/data-processor && mvn -q test'
                     }
                 }
-                sh '''
-                cd product-docker
-                ./build-scripts/stage-local-app.sh
-                docker build --target api            -t ${ECR_REGISTRY}/analytics-api:${IMAGE_TAG} .
-                docker build --target webapp         -t ${ECR_REGISTRY}/analytics-web:${IMAGE_TAG} .
-                docker build --target data-processor -t ${ECR_REGISTRY}/analytics-data-processor:${IMAGE_TAG} .
-                '''
+                sh '$SCRIPTS/build-images.sh'
             }
         }
 
-        // Runs before the push, so a failing image never reaches ECR.
         stage('Image Scan (Trivy)') {
             when { expression { params.SECURITY_SCAN } }
             steps {
-                sh '''
-                rc=0
-                for image in analytics-api analytics-web analytics-data-processor; do
-                    product-deployment-pipeline/scripts/scan-image.sh ${ECR_REGISTRY}/${image}:${IMAGE_TAG} || rc=1
-                done
-                exit $rc
-                '''
+                sh '$SCRIPTS/scan-image.sh $ECR_REGISTRY/analytics-api:$IMAGE_TAG'
+                sh '$SCRIPTS/scan-image.sh $ECR_REGISTRY/analytics-web:$IMAGE_TAG'
+                sh '$SCRIPTS/scan-image.sh $ECR_REGISTRY/analytics-data-processor:$IMAGE_TAG'
             }
         }
 
         stage('Push Images') {
             when { expression { params.ACTION == 'apply' } }
             steps {
-                sh '''
-                aws ecr get-login-password --region ${AWS_REGION} | \
-                    docker login --username AWS --password-stdin ${ECR_REGISTRY}
-                docker push ${ECR_REGISTRY}/analytics-api:${IMAGE_TAG}
-                docker push ${ECR_REGISTRY}/analytics-web:${IMAGE_TAG}
-                docker push ${ECR_REGISTRY}/analytics-data-processor:${IMAGE_TAG}
-                '''
+                sh '$SCRIPTS/push-images.sh'
             }
         }
 
         stage('Infrastructure Plan') {
             steps {
-                dir('product-infrastructure') {
-                    sh """
-                    terraform init \
-                        -backend-config="bucket=${TF_STATE_BUCKET}" \
-                        -backend-config="region=${AWS_REGION}"
-                    terraform workspace select ${params.ENVIRONMENT} || terraform workspace new ${params.ENVIRONMENT}
-                    terraform plan \
-                        -var-file="environments/${params.ENVIRONMENT}/${params.ENVIRONMENT}.tfvars" \
-                        -var="image_tag=${IMAGE_TAG}" \
-                        -var="jenkins_role_arn=${env.JENKINS_ROLE_ARN}" \
-                        -out=tfplan.binary
-                    terraform show -json tfplan.binary > tfplan.json
-                    """
-                    archiveArtifacts artifacts: 'tfplan.json'
-                }
+                sh '$SCRIPTS/terraform-plan.sh'
+                archiveArtifacts artifacts: 'product-infrastructure/tfplan.json'
             }
         }
 
@@ -158,88 +109,34 @@ pipeline {
         stage('Infrastructure Apply') {
             when { expression { params.ACTION == 'apply' } }
             steps {
-                dir('product-infrastructure') {
-                    sh 'terraform apply -auto-approve tfplan.binary'
-                }
+                sh 'cd product-infrastructure && terraform apply -auto-approve tfplan.binary'
             }
         }
 
         stage('Kubernetes Deploy') {
             when { expression { params.ACTION == 'apply' } }
             steps {
-                sh '''
-                aws eks update-kubeconfig --name ${CLUSTER_NAME} --region ${AWS_REGION}
-                kubectl create namespace analytics --dry-run=client -o yaml | kubectl apply -f -
-                product-deployment-pipeline/scripts/sync-secrets.sh ${ENVIRONMENT}
-                '''
-                script {
-                    // From here the cluster is changing, so a failure should roll back.
-                    env.ROLLBACK_ARMED = 'true'
-                }
-                dir('product-kubernetes') {
-                    sh '''
-                    sed -e "s#analytics-api:latest#${ECR_REGISTRY}/analytics-api:${IMAGE_TAG}#g" \
-                        -e "s#analytics-web:latest#${ECR_REGISTRY}/analytics-web:${IMAGE_TAG}#g" \
-                        -e "s#analytics-data-processor:latest#${ECR_REGISTRY}/analytics-data-processor:${IMAGE_TAG}#g" \
-                        deployment.yaml > deployment.rendered.yaml
-
-                    kubectl apply -f configmap.yaml
-                    kubectl apply -f deployment.rendered.yaml
-                    kubectl apply -f service.yaml
-                    kubectl apply -f ingress.yaml
-
-                    # Unlike `kubectl wait --for=condition=available`, this waits
-                    # for the NEW pods rather than passing on the old ones.
-                    kubectl rollout status deployment/analytics-api -n analytics --timeout=300s
-                    kubectl rollout status deployment/analytics-web -n analytics --timeout=300s
-                    '''
-                }
+                sh 'aws eks update-kubeconfig --name analytics-$ENVIRONMENT --region $AWS_REGION'
+                sh '$SCRIPTS/sync-secrets.sh $ENVIRONMENT'
+                script { env.ROLLBACK_NEEDED = 'true' }
+                sh '$SCRIPTS/k8s-deploy.sh'
             }
         }
 
         stage('Smoke Tests') {
             when { expression { params.ACTION == 'apply' } }
             steps {
-                sh '''
-                API_URL=$(kubectl get ingress analytics-api -n analytics -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-                product-deployment-pipeline/scripts/health-check.sh "http://${API_URL}" /actuator/health 30 10 api.analytics.company.com
-
-                WEB_URL=$(kubectl get ingress analytics-web -n analytics -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-                product-deployment-pipeline/scripts/health-check.sh "http://${WEB_URL}" /health 30 10 app.analytics.company.com
-                '''
-                script {
-                    // The release is verified; a later monitoring failure must not undo it.
-                    env.ROLLBACK_ARMED = 'false'
-                }
+                sh '$SCRIPTS/smoke-test.sh'
+                // The new version works, so a later failure should not roll it back
+                script { env.ROLLBACK_NEEDED = 'false' }
             }
         }
 
         stage('Monitoring Setup') {
             when { expression { params.ACTION == 'apply' } }
             steps {
-                dir('monitoring') {
-                    withCredentials([string(credentialsId: 'slack-webhook-url', variable: 'SLACK_WEBHOOK_URL')]) {
-                        sh '''
-                        kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-
-                        # Mounted into Alertmanager; see alertmanager.config in the Helm values.
-                        printf '%s' "$SLACK_WEBHOOK_URL" | kubectl create secret generic alertmanager-slack \
-                            -n monitoring --from-file=webhook=/dev/stdin --dry-run=client -o yaml | kubectl apply -f -
-
-                        kubectl create configmap grafana-analytics-dashboard \
-                            --from-file=dashboards/grafana-analytics-dashboard.json \
-                            -n monitoring --dry-run=client -o yaml | kubectl apply -f -
-
-                        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-                        helm repo update
-                        helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
-                            --namespace monitoring \
-                            -f dashboards/kube-prometheus-stack-values.yaml
-
-                        kubectl apply -k efk/
-                        kubectl apply -f dashboards/analytics-api-servicemonitor.yaml
-                        '''
-                    }
+                withCredentials([string(credentialsId: 'slack-webhook-url', variable: 'SLACK_WEBHOOK_URL')]) {
+                    sh '$SCRIPTS/setup-monitoring.sh'
                 }
             }
         }
@@ -251,24 +148,21 @@ pipeline {
         }
         success {
             script {
-                def verb = params.ACTION == 'apply' ? 'Deployment' : 'Plan (nothing deployed)'
-                def message = "${verb} succeeded: ${env.JOB_NAME} #${env.BUILD_NUMBER} for ${params.ENVIRONMENT}"
-                echo "✅ ${message}"
-                sendSlack('SUCCESS', message)
+                def result = params.ACTION == 'apply' ? 'Deployment succeeded' : 'Plan succeeded (nothing deployed)'
+                echo "${result}: ${params.ENVIRONMENT}, build #${env.BUILD_NUMBER}"
+                notifySlack('SUCCESS', "${result}: ${params.ENVIRONMENT}, build #${env.BUILD_NUMBER}")
             }
-            archiveArtifacts artifacts: '**/test-results/**/*.xml, **/coverage/**/*', allowEmptyArchive: true
         }
         failure {
             script {
-                def message = "${env.JOB_NAME} #${env.BUILD_NUMBER} for ${params.ENVIRONMENT} (ACTION=${params.ACTION})"
-                echo "❌ Failed: ${message}"
-                if (env.ROLLBACK_ARMED == 'true') {
-                    def rollback = sh(script: 'product-deployment-pipeline/scripts/rollback.sh ${ENVIRONMENT}', returnStatus: true)
-                    message += rollback == 0 ? ' - rolled back to the previous version' : ' - ROLLBACK FAILED, needs manual action'
-                } else {
-                    message += ' - cluster not changed, no rollback needed'
+                def message = "${params.ENVIRONMENT}, build #${env.BUILD_NUMBER}, ACTION=${params.ACTION}: no rollback performed"
+                if (env.ROLLBACK_NEEDED == 'true') {
+                    def status = sh(script: '$SCRIPTS/rollback.sh $ENVIRONMENT', returnStatus: true)
+                    message = "${params.ENVIRONMENT}, build #${env.BUILD_NUMBER}: " +
+                        (status == 0 ? 'rolled back to the previous version' : 'ROLLBACK FAILED, fix manually')
                 }
-                sendSlack('FAILED', message)
+                echo "Build failed: ${message}"
+                notifySlack('FAILED', message)
             }
         }
     }

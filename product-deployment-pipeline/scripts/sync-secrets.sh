@@ -28,6 +28,8 @@ to_env() {
 db_env="$(to_env "$(read_json db-credentials)" DB_USERNAME DB_PASSWORD DB_URL)"
 api_env="$(to_env "$(read_json api-keys)" JWT_SIGNING_KEY)"
 
+kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+
 printf '%s\n%s\n' "$db_env" "$api_env" \
     | kubectl create secret generic api-secrets -n "$NAMESPACE" --from-env-file=/dev/stdin --dry-run=client -o yaml \
     | kubectl apply -f -

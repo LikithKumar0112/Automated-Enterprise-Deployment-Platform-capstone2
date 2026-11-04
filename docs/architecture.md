@@ -76,7 +76,8 @@ git-ignored `deployment.rendered.yaml` before `kubectl apply` (`sed` in
 ### CI/CD — `product-deployment-pipeline/`
 `Jenkinsfile` is the pipeline entry point; `scripts/` holds `deploy.sh` (the
 manual/local equivalent) and helpers both of them call (`health-check.sh`,
-`rollback.sh`, `sync-secrets.sh`, `scan-image.sh`, `notify-slack.sh`).
+`rollback.sh`, `sync-secrets.sh`, `scan-image.sh`, `notify-slack.sh`) and one
+script for each larger pipeline step (`build-images.sh`, `k8s-deploy.sh`, and so on).
 `shared-library/vars/*.groovy` exists but isn't called by the Jenkinsfile yet. See
 `docs/runbooks.md` for the full stage-by-stage walkthrough.
 

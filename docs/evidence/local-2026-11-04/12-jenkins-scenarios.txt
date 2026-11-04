@@ -1,0 +1,49 @@
+Jenkinsfile run on a throwaway Jenkins (sandbox on). AWS, Docker, Terraform, kubectl,
+Helm, Maven, Snyk and curl were stand-in scripts, so this tests pipeline control flow only.
+Counts are calls to: docker push, terraform apply, kubectl apply of the deployment,
+rollout undo (2 = both Deployments), and helm upgrade. Status: S=success F=failed/skipped
+after failure, N=not run, A=aborted.
+
+[dev_plan] SUCCESS push=0 tfapply=0 k8sapply=0 undo=0 helm=0
+  Initialize=S IaC=S Dependency=S Build=S Image=S Push=N Infrastructure=S Manual=N Infrastructure=N Kubernetes=N Smoke=N Monitoring=N Declarative:=S
+  slack: ✅ Deployment SUCCESS: Plan succeeded (nothing deployed): dev, build #44"
+[dev_apply] SUCCESS push=3 tfapply=1 k8sapply=1 undo=0 helm=1
+  Initialize=S IaC=S Dependency=S Build=S Image=S Push=S Infrastructure=S Manual=N Infrastructure=S Kubernetes=S Smoke=S Monitoring=S Declarative:=S
+  slack: ✅ Deployment SUCCESS: Deployment succeeded: dev, build #45"
+[checkov_fail] FAILURE push=0 tfapply=0 k8sapply=0 undo=0 helm=0
+  Initialize=S IaC=F Dependency=F Build=F Image=F Push=F Infrastructure=F Manual=F Infrastructure=F Kubernetes=F Smoke=F Monitoring=F Declarative:=S
+  slack: ❌ Deployment FAILED: dev, build #46, ACTION=apply: no rollback performed"
+[snyk_fail] FAILURE push=0 tfapply=0 k8sapply=0 undo=0 helm=0
+  Initialize=S IaC=S Dependency=F Build=F Image=F Push=F Infrastructure=F Manual=F Infrastructure=F Kubernetes=F Smoke=F Monitoring=F Declarative:=S
+  slack: ❌ Deployment FAILED: dev, build #47, ACTION=apply: no rollback performed"
+[trivy_fail] FAILURE push=0 tfapply=0 k8sapply=0 undo=0 helm=0
+  Initialize=S IaC=S Dependency=S Build=S Image=F Push=F Infrastructure=F Manual=F Infrastructure=F Kubernetes=F Smoke=F Monitoring=F Declarative:=S
+  slack: ❌ Deployment FAILED: dev, build #48, ACTION=apply: no rollback performed"
+[tf_fail] FAILURE push=3 tfapply=1 k8sapply=0 undo=0 helm=0
+  Initialize=S IaC=S Dependency=S Build=S Image=S Push=S Infrastructure=S Manual=N Infrastructure=F Kubernetes=F Smoke=F Monitoring=F Declarative:=S
+  slack: ❌ Deployment FAILED: dev, build #49, ACTION=apply: no rollback performed"
+[secret_missing] FAILURE push=3 tfapply=1 k8sapply=0 undo=0 helm=0
+  Initialize=S IaC=S Dependency=S Build=S Image=S Push=S Infrastructure=S Manual=N Infrastructure=S Kubernetes=F Smoke=F Monitoring=F Declarative:=S
+  slack: ❌ Deployment FAILED: dev, build #50, ACTION=apply: no rollback performed"
+[rollout_fail] FAILURE push=3 tfapply=1 k8sapply=1 undo=2 helm=0
+  Initialize=S IaC=S Dependency=S Build=S Image=S Push=S Infrastructure=S Manual=N Infrastructure=S Kubernetes=F Smoke=F Monitoring=F Declarative:=S
+  slack: ❌ Deployment FAILED: dev, build #51: rolled back to the previous version"
+[smoke_fail] FAILURE push=3 tfapply=1 k8sapply=1 undo=2 helm=0
+  Initialize=S IaC=S Dependency=S Build=S Image=S Push=S Infrastructure=S Manual=N Infrastructure=S Kubernetes=S Smoke=F Monitoring=F Declarative:=S
+  slack: ❌ Deployment FAILED: dev, build #52: rolled back to the previous version"
+[no_ingress] FAILURE push=3 tfapply=1 k8sapply=1 undo=2 helm=0
+  Initialize=S IaC=S Dependency=S Build=S Image=S Push=S Infrastructure=S Manual=N Infrastructure=S Kubernetes=S Smoke=F Monitoring=F Declarative:=S
+  slack: ❌ Deployment FAILED: dev, build #53: rolled back to the previous version"
+[monitoring_fail] FAILURE push=3 tfapply=1 k8sapply=1 undo=0 helm=1
+  Initialize=S IaC=S Dependency=S Build=S Image=S Push=S Infrastructure=S Manual=N Infrastructure=S Kubernetes=S Smoke=S Monitoring=F Declarative:=S
+  slack: ❌ Deployment FAILED: dev, build #54, ACTION=apply: no rollback performed"
+[undo_fail] FAILURE push=3 tfapply=1 k8sapply=1 undo=1 helm=0
+  Initialize=S IaC=S Dependency=S Build=S Image=S Push=S Infrastructure=S Manual=N Infrastructure=S Kubernetes=F Smoke=F Monitoring=F Declarative:=S
+  slack: ❌ Deployment FAILED: dev, build #55: ROLLBACK FAILED, fix manually"
+[prod_noscan] FAILURE push=0 tfapply=0 k8sapply=0 undo=0 helm=0
+  Initialize=F IaC=F Dependency=F Build=F Image=F Push=F Infrastructure=F Manual=F Infrastructure=F Kubernetes=F Smoke=F Monitoring=F Declarative:=S
+  slack: ❌ Deployment FAILED: prod, build #56, ACTION=apply: no rollback performed"
+  paused at approval
+[prod_apply] ABORTED push=3 tfapply=0 k8sapply=0 undo=0 helm=0
+  Initialize=S IaC=S Dependency=S Build=S Image=S Push=S Infrastructure=S Manual=A Infrastructure=A Kubernetes=A Smoke=A Monitoring=A Declarative:=S
+  slack: 

@@ -45,7 +45,7 @@ Keep the AWS spend short: do steps 4–12 in one sitting, then step 13.
 
 ## 3. Fix the finding, then the gates pass
 
-- [ ] Point the job back at `submission-fixes` (Spring Boot 4.1.2, Java 17) and run `dev` / `plan`. All scans should pass, with Push, Approval, Apply, Deploy, Smoke, and Monitoring skipped, and the log should say `Plan (nothing deployed)`.
+- [ ] Point the job back at `submission-fixes` (Spring Boot 4.1.2, Java 17) and run `dev` / `plan`. All scans should pass, with Push, Approval, Apply, Deploy, Smoke, and Monitoring skipped, and the log should say `Plan succeeded (nothing deployed)`.
       Save `gate-all-pass-dev-plan.png`. If a new CVE has been published since, it will block: that is the gate working, so update the dependency.
 
 ## 4. Deploy `dev`

@@ -20,7 +20,7 @@ The review was based on a 20-entry ZIP, which did not contain the implementation
 Three behaviours in the Source A screenshots have since changed:
 
 - The scanners reported findings but could not fail a build. They now block it.
-- `ACTION=plan` builds still ran Smoke Tests and Monitoring Setup and printed "Deployment successful". Those stages now run for `apply` only, and a plan build reports "Plan (nothing deployed)".
+- `ACTION=plan` builds still ran Smoke Tests and Monitoring Setup and printed "Deployment successful". Those stages now run for `apply` only, and a plan build reports "Plan succeeded (nothing deployed)".
 - The stage names are different. "Security Scan" is now separate IaC, Dependency, and Image scan stages, plus a Push Images stage.
 
 ## 2. Review feedback coverage
@@ -158,7 +158,7 @@ These dashboards were reached on a public IP over HTTP, with Elasticsearch secur
 
 ## 4. Source B: local verification, 4 November 2026
 
-These checks ran on clean clones, without AWS, using the tools and scripts in the repository. Commit `7801b0e` is the changed code on Spring Boot 2.7.18, and `d66c585` adds the upgrade to Spring Boot 4.1.2 and Java 17, which changes only the API dependency versions and base image. Sections 4.3 and 4.4 ran on both; the others ran on `7801b0e`. These commit IDs and the ones in the logs were updated after a later edit to commit messages; the code at each commit is unchanged. The output below is trimmed; full output is in [`docs/evidence/local-2026-11-04/`](evidence/local-2026-11-04/).
+These checks ran on clean clones, without AWS, using the tools and scripts in the repository. Commit `7801b0e` is the changed code on Spring Boot 2.7.18, and `d66c585` adds the upgrade to Spring Boot 4.1.2 and Java 17, which changes only the API dependency versions and base image. Sections 4.3 and 4.4 ran on both, 4.6 ran on the final Jenkinsfile, and the others ran on `7801b0e`. These commit IDs and the ones in the logs were updated after a later edit to commit messages; the code at each commit is unchanged. The output below is trimmed; full output is in [`docs/evidence/local-2026-11-04/`](evidence/local-2026-11-04/).
 
 ### 4.1 Terraform validates
 
@@ -239,7 +239,7 @@ exit=1
 
 ### 4.6 Pipeline failure paths, simulated
 
-The actual Jenkinsfile ran on a throwaway Jenkins with the sandbox on and the declarative linter passing. **AWS, Docker, Terraform, kubectl, Helm, Maven, and Snyk were stand-in scripts that returned chosen results.** This tests the pipeline's control flow, not the tools. The Jenkins logs were not kept.
+The actual Jenkinsfile ran on a throwaway Jenkins with the sandbox on and the declarative linter passing. **AWS, Docker, Terraform, kubectl, Helm, Maven, and Snyk were stand-in scripts that returned chosen results.** This tests the pipeline's control flow, not the tools. The results are in `12-jenkins-scenarios.txt`.
 
 | Scenario | Result |
 |---|---|
@@ -247,6 +247,7 @@ The actual Jenkinsfile ran on a throwaway Jenkins with the sandbox on and the de
 | `dev` apply | Success |
 | Checkov, Snyk, or Trivy fails (3 scenarios) | Build fails; no push, no rollback |
 | Terraform fails | Build fails; no rollback |
+| A secret is missing from Secrets Manager | Build fails before the manifests are applied; no rollback |
 | Rollout fails, smoke test fails, or Ingress has no address (3 scenarios) | Build fails; rollback runs |
 | Monitoring Setup fails | Build fails; no rollback, because the application had already passed its smoke test |
 | Rollback itself fails | Build reports "ROLLBACK FAILED" |

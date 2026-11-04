@@ -193,6 +193,13 @@ Automated-Enterprise-Deployment-Platform-capstone2/
 │   │   ├── rollback.sh               kubectl rollout undo for analytics-api / analytics-web
 │   │   ├── sync-secrets.sh           Builds the api-secrets Secret from AWS Secrets Manager
 │   │   ├── scan-image.sh             Trivy scan that fails on fixable HIGH/CRITICAL
+│   │   ├── scan-iac.sh               Checkov scan against the baseline
+│   │   ├── build-images.sh           Builds the three images
+│   │   ├── push-images.sh            Pushes the images to ECR
+│   │   ├── terraform-plan.sh         Terraform init, workspace, and plan
+│   │   ├── k8s-deploy.sh             Applies manifests and waits for the rollout
+│   │   ├── smoke-test.sh             Health checks through the Ingress
+│   │   ├── setup-monitoring.sh       Installs Prometheus, Grafana, and EFK
 │   │   └── notify-slack.sh           Slack webhook notification wrapper
 │   └── shared-library/vars/          Reusable Jenkins steps (not called by the Jenkinsfile yet)
 ├── product-infrastructure/
