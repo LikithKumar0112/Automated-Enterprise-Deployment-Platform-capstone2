@@ -8,7 +8,7 @@
 # See build-scripts/ for wrappers around these commands.
 
 # ---- shared base for the two JVM components ----
-FROM eclipse-temurin:11-jre-jammy AS jvm-base
+FROM eclipse-temurin:17-jre-jammy AS jvm-base
 RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 RUN groupadd -g 1001 appgroup && useradd -r -u 1001 -g appgroup appuser
 WORKDIR /app
