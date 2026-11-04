@@ -1,25 +1,33 @@
 #!/bin/bash
-# Polls a deployed endpoint's health path until it succeeds or times out.
-# Usage: ./health-check.sh <url> <path> [max_attempts] [sleep_seconds]
-set -e
-URL="$1"
+# Polls a deployed endpoint's health path until it succeeds or attempts run out.
+# Exits non-zero if the endpoint never becomes healthy.
+# Usage: ./health-check.sh <base-url> [path] [max_attempts] [sleep_seconds] [host_header]
+#   e.g. ./health-check.sh http://my-alb.amazonaws.com /health 30 10 app.example.com
+set -u
+URL="${1:-}"
 PATH_="${2:-/health}"
 MAX_ATTEMPTS="${3:-30}"
 SLEEP_SECONDS="${4:-5}"
+HOST_HEADER="${5:-}"
 
-if [[ -z "$URL" ]]; then
-    echo "Usage: $0 <url> <path> [max_attempts] [sleep_seconds]"
+# A bare scheme means the ingress lookup returned nothing: that's a failure, not a skip.
+if [[ -z "$URL" || "$URL" == "http://" || "$URL" == "https://" ]]; then
+    echo "❌ No endpoint to check (URL is empty - has the Ingress got an address?)"
+    echo "Usage: $0 <base-url> [path] [max_attempts] [sleep_seconds] [host_header]"
     exit 1
 fi
 
-echo "Checking https://${URL}${PATH_} ..."
+CURL_ARGS=(-sf --max-time 10)
+[[ -n "$HOST_HEADER" ]] && CURL_ARGS+=(-H "Host: ${HOST_HEADER}")
+
+echo "Checking ${URL}${PATH_} ..."
 for ((i = 1; i <= MAX_ATTEMPTS; i++)); do
-    if curl -sf "https://${URL}${PATH_}" > /dev/null; then
+    if curl "${CURL_ARGS[@]}" "${URL}${PATH_}" > /dev/null; then
         echo "✅ Healthy after ${i} attempt(s)"
         exit 0
     fi
     echo "Attempt ${i}/${MAX_ATTEMPTS} failed, retrying in ${SLEEP_SECONDS}s..."
-    sleep "$SLEEP_SECONDS"
+    [[ "$i" -lt "$MAX_ATTEMPTS" ]] && sleep "$SLEEP_SECONDS"
 done
-echo "❌ Endpoint did not become healthy in time"
+echo "❌ ${URL}${PATH_} not healthy after ${MAX_ATTEMPTS} attempts"
 exit 1

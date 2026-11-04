@@ -22,13 +22,13 @@ resource "aws_kms_alias" "secrets" {
   target_key_id = aws_kms_key.secrets.key_id
 }
 
-# Application secrets - populated out-of-band (Vault sync or manual);
+# Application secrets - values set out-of-band (see docs/runbooks.md);
 # Terraform only owns the container/metadata, never the secret_string.
-# product-kubernetes/secrets.yaml documents the expected shape for these.
+# scripts/sync-secrets.sh copies them into the api-secrets Kubernetes Secret.
 resource "aws_secretsmanager_secret" "app" {
-  for_each   = toset(var.secret_names)
-  name       = "${var.name_prefix}/${each.key}"
-  kms_key_id = aws_kms_key.secrets.arn
+  for_each                = toset(var.secret_names)
+  name                    = "${var.name_prefix}/${each.key}"
+  kms_key_id              = aws_kms_key.secrets.arn
   recovery_window_in_days = 0
 }
 

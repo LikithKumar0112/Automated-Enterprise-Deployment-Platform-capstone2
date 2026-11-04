@@ -5,7 +5,7 @@ vpc_cidr           = "10.20.0.0/16"
 az_count           = 3
 single_nat_gateway = true
 
-k8s_version = "1.35"
+k8s_version               = "1.35"
 eks_public_access_enabled = false
 eks_public_access_cidrs   = []
 

@@ -11,9 +11,9 @@ eks_public_access_cidrs   = ["0.0.0.0/0"] # dev only - tighten for shared/stage 
 
 node_groups = {
   general = {
-    desired_size = 2
-    max_size     = 3
-    min_size     = 1
+    desired_size   = 2
+    max_size       = 3
+    min_size       = 1
     instance_types = ["m7i-flex.large"]
     capacity_type  = "ON_DEMAND"
     labels         = {}

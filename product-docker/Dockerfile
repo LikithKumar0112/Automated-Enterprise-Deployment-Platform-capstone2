@@ -32,7 +32,8 @@ ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
 ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar app.jar"]
 
 # ---- webapp target (static nginx, no JVM) ----
-FROM nginx:1.21-alpine AS webapp
+FROM nginx:1.30-alpine AS webapp
+RUN apk upgrade --no-cache
 RUN addgroup -g 1001 -S appgroup && adduser -S appuser -u 1001 -G appgroup
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY mime.types /etc/nginx/mime.types

@@ -5,13 +5,13 @@ vpc_cidr           = "10.30.0.0/16"
 az_count           = 3
 single_nat_gateway = false
 
-k8s_version = "1.35"
+k8s_version               = "1.35"
 eks_public_access_enabled = false
 eks_public_access_cidrs   = []
 
 node_groups = {
   general = {
-    desired_size = 3
+    desired_size   = 3
     max_size       = 10
     min_size       = 1
     instance_types = ["m7i-flex.large"]

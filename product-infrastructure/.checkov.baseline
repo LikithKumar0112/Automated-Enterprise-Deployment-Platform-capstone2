@@ -1,0 +1,121 @@
+{
+    "failed_checks": [
+        {
+            "file": "/modules/eks-cluster/main.tf",
+            "findings": [
+                {
+                    "resource": "module.eks_cluster.aws_iam_policy_document.kms_key_policy",
+                    "check_ids": [
+                        "CKV_AWS_109",
+                        "CKV_AWS_111",
+                        "CKV_AWS_356"
+                    ]
+                }
+            ]
+        },
+        {
+            "file": "/modules/monitoring-stack/main.tf",
+            "findings": [
+                {
+                    "resource": "module.monitoring_stack.aws_cloudwatch_log_group.eks_control_plane",
+                    "check_ids": [
+                        "CKV_AWS_158",
+                        "CKV_AWS_338"
+                    ]
+                },
+                {
+                    "resource": "module.monitoring_stack.aws_sns_topic.alerts",
+                    "check_ids": [
+                        "CKV_AWS_26"
+                    ]
+                }
+            ]
+        },
+        {
+            "file": "/modules/security-baseline/main.tf",
+            "findings": [
+                {
+                    "resource": "module.security_baseline.aws_iam_role_policy.ci_deploy",
+                    "check_ids": [
+                        "CKV_AWS_290",
+                        "CKV_AWS_355"
+                    ]
+                },
+                {
+                    "resource": "module.security_baseline.aws_kms_key.secrets",
+                    "check_ids": [
+                        "CKV2_AWS_64"
+                    ]
+                },
+                {
+                    "resource": "module.security_baseline.aws_secretsmanager_secret.app[\"api-keys\"]",
+                    "check_ids": [
+                        "CKV2_AWS_57"
+                    ]
+                },
+                {
+                    "resource": "module.security_baseline.aws_secretsmanager_secret.app[\"db-credentials\"]",
+                    "check_ids": [
+                        "CKV2_AWS_57"
+                    ]
+                },
+                {
+                    "resource": "module.security_baseline.aws_wafv2_web_acl.alb",
+                    "check_ids": [
+                        "CKV2_AWS_31",
+                        "CKV_AWS_192"
+                    ]
+                }
+            ]
+        },
+        {
+            "file": "/modules/vpc-networking/main.tf",
+            "findings": [
+                {
+                    "resource": "module.vpc_networking.aws_availability_zones.available",
+                    "check_ids": [
+                        "CKV_AWS_394"
+                    ]
+                },
+                {
+                    "resource": "module.vpc_networking.aws_cloudwatch_log_group.flow_log",
+                    "check_ids": [
+                        "CKV_AWS_158",
+                        "CKV_AWS_338"
+                    ]
+                },
+                {
+                    "resource": "module.vpc_networking.aws_iam_role_policy.flow_log",
+                    "check_ids": [
+                        "CKV_AWS_290",
+                        "CKV_AWS_355"
+                    ]
+                },
+                {
+                    "resource": "module.vpc_networking.aws_subnet.public[0]",
+                    "check_ids": [
+                        "CKV_AWS_130"
+                    ]
+                },
+                {
+                    "resource": "module.vpc_networking.aws_subnet.public[1]",
+                    "check_ids": [
+                        "CKV_AWS_130"
+                    ]
+                },
+                {
+                    "resource": "module.vpc_networking.aws_subnet.public[2]",
+                    "check_ids": [
+                        "CKV_AWS_130"
+                    ]
+                },
+                {
+                    "resource": "module.vpc_networking.aws_vpc.this",
+                    "check_ids": [
+                        "CKV2_AWS_12"
+                    ]
+                }
+            ]
+        }
+    ]
+}

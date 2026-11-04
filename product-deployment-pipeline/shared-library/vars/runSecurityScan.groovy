@@ -9,6 +9,6 @@ def call(Map config) {
     """
 
     if (config.scanTerraform) {
-        sh 'docker run --rm -v "$(pwd)/infra/product-infrastructure:/iac" bridgecrew/checkov -d /iac'
+        sh 'docker run --rm -v "$(pwd)/product-infrastructure:/iac" bridgecrew/checkov -d /iac'
     }
 }
