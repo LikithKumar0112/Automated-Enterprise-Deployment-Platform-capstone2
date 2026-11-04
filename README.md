@@ -15,7 +15,7 @@
 
 This repository is the deployment backbone for a self-hosted, data-intensive enterprise analytics product. It contains everything required to build, secure, provision, deploy, and observe that product consistently across multiple environments, plus small stub applications in `app/` so the whole flow can be run end to end.
 
-**Current status:** `dev` was fully deployed on real AWS and Jenkins; `stage` and `prod` were validated with `terraform plan` only because of an account vCPU quota. See [`EXECUTION.md`](EXECUTION.md) for the evidence and [`docs/evidence-checklist.md`](docs/evidence-checklist.md) for what still has to be re-captured.
+**Current status:** `dev` was fully deployed on real AWS and Jenkins; `stage` and `prod` were validated with `terraform plan` only because of an account vCPU quota. See [`docs/submission-evidence.pdf`](docs/submission-evidence.pdf) for the submitted evidence, [`EXECUTION.md`](EXECUTION.md) for the full run record, and [`docs/evidence-checklist.md`](docs/evidence-checklist.md) for what still has to be re-captured.
 
 **Business value:** analytics products sold as self-hosted software are traditionally deployed by hand, environment by environment, which produces configuration drift, slow onboarding, and inconsistent security posture per customer. This platform replaces that with one Terraform codebase parameterized per environment, one CI/CD pipeline enforcing the same security gates everywhere, and one Kubernetes manifest set deployed identically regardless of target — trading manual, error-prone rollout for a repeatable, auditable process.
 

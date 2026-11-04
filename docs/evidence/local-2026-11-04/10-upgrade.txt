@@ -1,0 +1,14 @@
+fd51371 Upgrade API to Spring Boot 4.1.2 on Java 17
+stage exit=0
+docker build exit=0
+Report Summary
+
+┌──────────────────────┬────────┬─────────────────┬─────────┐
+│        Target        │  Type  │ Vulnerabilities │ Secrets │
+├──────────────────────┼────────┼─────────────────┼─────────┤
+│ /scan (ubuntu 22.04) │ ubuntu │        0        │    -    │
+├──────────────────────┼────────┼─────────────────┼─────────┤
+│ app/app.jar          │  jar   │        0        │    -    │
+└──────────────────────┴────────┴─────────────────┴─────────┘
+Legend:
+scan exit=0

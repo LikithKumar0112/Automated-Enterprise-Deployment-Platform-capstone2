@@ -1,0 +1,30 @@
+Scanning analytics-data-processor:evidence ...
+2026-11-04T14:42:00Z	INFO	[vuln] Vulnerability scanning is enabled
+2026-11-04T14:42:00Z	INFO	[secret] Secret scanning is enabled
+2026-11-04T14:42:00Z	INFO	[secret] If your scanning is slow, please try '--scanners vuln' to disable secret scanning
+2026-11-04T14:42:00Z	INFO	[secret] Please see https://trivy.dev/docs/v0.69/guide/scanner/secret#recommendation for faster secret detection
+2026-11-04T14:42:01Z	INFO	Detected OS	family="ubuntu" version="22.04"
+2026-11-04T14:42:01Z	INFO	[ubuntu] Detecting vulnerabilities...	os_version="22.04" pkg_num=143
+2026-11-04T14:42:01Z	INFO	Number of language-specific files	num=1
+2026-11-04T14:42:01Z	INFO	[jar] Detecting vulnerabilities...
+
+Report Summary
+
+┌──────────────────────┬────────┬─────────────────┬─────────┐
+│        Target        │  Type  │ Vulnerabilities │ Secrets │
+├──────────────────────┼────────┼─────────────────┼─────────┤
+│ /scan (ubuntu 22.04) │ ubuntu │        0        │    -    │
+├──────────────────────┼────────┼─────────────────┼─────────┤
+│ app/app.jar          │  jar   │        0        │    -    │
+└──────────────────────┴────────┴─────────────────┴─────────┘
+Legend:
+- '-': Not scanned
+- '0': Clean (no security findings detected)
+
+
+📣 Notices:
+  - Version 0.76.1 of Trivy is now available, current version is 0.69.3
+
+To suppress version checks, run Trivy scans with the --skip-version-check flag
+
+exit=0

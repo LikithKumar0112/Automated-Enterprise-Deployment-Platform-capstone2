@@ -1,0 +1,18 @@
+terraform scan results:
+
+Passed checks: 0, Failed checks: 3, Skipped checks: 0
+
+Check: CKV_AWS_23: "Ensure every security group and rule has a description"
+	FAILED for resource: aws_security_group.demo_open_ssh
+	File: /main.tf:98-105
+	Guide: https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/aws-networking-policies/networking-31
+Check: CKV_AWS_24: "Ensure no security groups allow ingress from 0.0.0.0:0 to port 22"
+	FAILED for resource: aws_security_group.demo_open_ssh
+	File: /main.tf:98-105
+	Guide: https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/aws-networking-policies/networking-1-port-security
+Check: CKV2_AWS_5: "Ensure that Security Groups are attached to another resource"
+	FAILED for resource: aws_security_group.demo_open_ssh
+	File: /main.tf:98-105
+	Guide: https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/aws-networking-policies/ensure-that-security-groups-are-attached-to-ec2-instances-or-elastic-network-interfaces-enis
+Baseline analysis report using /iac/.checkov.baseline - only new failed checks with respect to the baseline are reported
+exit=1

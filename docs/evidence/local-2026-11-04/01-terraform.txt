@@ -1,0 +1,8 @@
+Terraform v1.17.1
+If you ever set or change modules or backend configuration for Terraform,
+rerun this command to reinitialize your working directory. If you forget, other
+commands will detect it and remind you to do so if necessary.
+Success! The configuration is valid.
+
+validate exit=0
+fmt -check exit=0

@@ -15,8 +15,6 @@
 
 ## Pipeline security gates (capstone Task 5)
 
-| Tool | Scope | Failure behavior |
-|---|---|---|
 | Tool | Stage | Fails when | Effect |
 |---|---|---|---|
 | Checkov 3.3.19 | IaC Scan | A Terraform finding is not in `product-infrastructure/.checkov.baseline` | Nothing built, pushed, or applied |
@@ -50,7 +48,7 @@ fixed, and only regenerate the file after reviewing what is being added.
 
 - **Storage:** AWS Secrets Manager, one container per logical secret
   (`product-infrastructure/modules/security-baseline`'s `secret_names`),
-  KMS-encrypted with rotation enabled.
+  KMS-encrypted. Automatic rotation is not enabled yet; see Known gaps.
 - **In-cluster shape:** `scripts/sync-secrets.sh` reads
   `analytics-<env>/db-credentials` (`DB_USERNAME`, `DB_PASSWORD`, `DB_URL`) and
   `analytics-<env>/api-keys` (`JWT_SIGNING_KEY`) and creates the `api-secrets`

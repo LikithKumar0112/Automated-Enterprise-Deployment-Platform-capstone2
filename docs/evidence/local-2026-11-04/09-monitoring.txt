@@ -1,0 +1,17 @@
+helm template exit=0
+$ amtool check-config alertmanager.yaml
+Checking '/am.yaml'  SUCCESS
+Found:
+ - global config
+ - route
+ - 4 inhibit rules
+ - 4 receivers
+ - 1 templates
+  SUCCESS
+
+exit=0
+
+Project alert rules in the rendered chart:
+- alert: HighErrorRate
+- alert: PodCrashLooping
+- alert: DeploymentStuck

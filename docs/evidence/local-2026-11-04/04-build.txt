@@ -1,0 +1,27 @@
+📦 Building app/api ...
+📦 Building app/data-processor ...
+📦 Staging build output into product-docker/ ...
+✅ Staged. product-docker/ now has target/, dist/, application-prod.yml, nginx.conf, mime.types
+   Run ./build-scripts/build-all.sh <tag> next.
+stage exit=0
+DEPRECATED: The legacy builder is deprecated and will be removed in a future release.
+            Install the buildx component to build images with BuildKit:
+            https://docs.docker.com/go/buildx/
+
+sha256:0e427639c905760670f73e52a4dad95aaf3e2d98a70b856a9eb26958b39d0e28
+docker build analytics-api exit=0
+DEPRECATED: The legacy builder is deprecated and will be removed in a future release.
+            Install the buildx component to build images with BuildKit:
+            https://docs.docker.com/go/buildx/
+
+sha256:f21ca104017542525e735876be7f2b140e185c606291c2c8a975aa757c85373c
+docker build analytics-web exit=0
+DEPRECATED: The legacy builder is deprecated and will be removed in a future release.
+            Install the buildx component to build images with BuildKit:
+            https://docs.docker.com/go/buildx/
+
+sha256:b315122ec0b0a9ecbd389db93a2587abd93c48dfd19e48b0bd8805506bfcc918
+docker build analytics-data-processor exit=0
+analytics-web:evidence  94.8MB
+analytics-data-processor:evidence  376MB
+analytics-api:evidence  452MB
