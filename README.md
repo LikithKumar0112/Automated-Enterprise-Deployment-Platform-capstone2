@@ -143,7 +143,7 @@ flowchart TB
 
 | Technology | Purpose |
 |---|---|
-| Eclipse Temurin 11 (`eclipse-temurin:11-jre-jammy`) | Runtime base image for the `api` and `data-processor` services |
+| Eclipse Temurin 17 (`eclipse-temurin:17-jre-jammy`) | Runtime base image for the `api` and `data-processor` services |
 | Nginx 1.30 (Alpine) | Static asset serving for the `webapp` service |
 | Docker multi-stage builds | Single Dockerfile, three build targets (`api`, `webapp`, `data-processor`) sharing a common base stage |
 
